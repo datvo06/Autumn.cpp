@@ -92,8 +92,7 @@ void defineAst(const std::string &outputDir, const std::string &baseName,
 
     className = capitalize(className);
 
-    writer << "class " << className << " : public " << baseName
-           << ", public std::enable_shared_from_this<" + className + "> {\n";
+    writer << "class " << className << " : public " << baseName << " {\n";
     writer << "public:\n";
 
     // Constructor
@@ -134,7 +133,7 @@ void defineAst(const std::string &outputDir, const std::string &baseName,
     // Override accept method
     writer << "    std::any accept(Visitor& visitor) override {\n";
     writer << "        return visitor.visit" << className << baseName
-           << "(shared_from_this());\n";
+           << "(*this);\n";
     writer << "    }\n\n";
 
     // Fields

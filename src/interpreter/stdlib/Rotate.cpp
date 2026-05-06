@@ -42,7 +42,7 @@ Rotate::call(Interpreter &interpreter,
       continue;
     subenv->define(fieldname, instance->get(fieldname));
   }
-  SExpParser tmpParser = SExpParser("");
+  SExpParser tmpParser = SExpParser("", interpreter.getInterner());
   for (auto &value : *list->getValues()) {
     auto subinstance = std::dynamic_pointer_cast<AutumnInstance>(value);
     if (subinstance == nullptr) {

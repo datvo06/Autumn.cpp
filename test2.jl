@@ -101,7 +101,7 @@ function get_cells_from_interpreter(interpreter::Interpreter)
 end
 
 interpreter = Interpreter()
-program = read(joinpath(@__DIR__, "tests/grow.sexp"), String)
+program = read(joinpath(@__DIR__, "tests/balloon.sexp"), String)
 run_script(interpreter, program, read(joinpath(@__DIR__, "autumnstdlib/stdlib.sexp"), String), "")
 step(interpreter)
 step(interpreter)

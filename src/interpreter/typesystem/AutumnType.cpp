@@ -1,8 +1,6 @@
 #include "AutumnType.hpp"
 
 namespace Autumn {
-std::shared_ptr<AutumnNumberType> AutumnNumberType::instance = nullptr;
-std::shared_ptr<AutumnStringType> AutumnStringType::instance = nullptr;
-std::shared_ptr<AutumnBoolType> AutumnBoolType::instance = nullptr;
-std::shared_ptr<AutumnUnknownType> AutumnUnknownType::instance = nullptr;
+// All AutumnType singletons are now function-local magic statics inside
+// getInstance(), so no out-of-class definitions are required here.
 } // namespace Autumn

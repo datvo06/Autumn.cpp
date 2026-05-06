@@ -40,7 +40,7 @@ renderValue(Interpreter &interpreter, std::shared_ptr<AutumnValue> value) {
     }
     std::shared_ptr<AutumnCallableValue> render =
         std::dynamic_pointer_cast<AutumnCallableValue>(
-            pInstance->get("render"));
+            AutumnInstance::getWithMethod(pInstance, "render"));
     std::shared_ptr<AutumnValue> result = render->call(interpreter, {});
     return std::dynamic_pointer_cast<AutumnList>(result);
   } else {
@@ -53,7 +53,7 @@ renderValue(Interpreter &interpreter, std::shared_ptr<AutumnValue> value) {
 std::shared_ptr<AutumnValue>
 Clicked::call(Interpreter &interpreter,
               const std::vector<std::shared_ptr<AutumnValue>> &arguments) {
-  if (interpreter.getState()->getClicked() == false) {
+  if (interpreter.getState().getClicked() == false) {
     return std::make_shared<AutumnBool>(false);
   }
   interpreter.getGlobals()->define(
@@ -61,9 +61,9 @@ Clicked::call(Interpreter &interpreter,
       std::make_shared<AutumnInstance>(
           PositionClass,
           std::vector<std::shared_ptr<AutumnValue>>(
-              {std::make_shared<AutumnNumber>(interpreter.getState()->getX()),
+              {std::make_shared<AutumnNumber>(interpreter.getState().getX()),
                std::make_shared<AutumnNumber>(
-                   interpreter.getState()->getY())})));
+                   interpreter.getState().getY())})));
   if (arguments.size() == 0) {
     return std::make_shared<AutumnBool>(true);
   }
@@ -73,8 +73,8 @@ Clicked::call(Interpreter &interpreter,
     // Filter out the element that is clicked
     std::string positionString =
         std::string("Position ") +
-        std::to_string(interpreter.getState()->getX()) + " " +
-        std::to_string(interpreter.getState()->getY());
+        std::to_string(interpreter.getState().getX()) + " " +
+        std::to_string(interpreter.getState().getY());
     // std::cout << "Clicked at " << positionString << std::endl;
     // std::cout << "Object to be tested: " << renderedElem->toString()
     //           << std::endl;
@@ -98,8 +98,8 @@ Clicked::call(Interpreter &interpreter,
                    ->getNumber();
       auto y = std::dynamic_pointer_cast<AutumnNumber>(position->get("y"))
                    ->getNumber();
-      if (x == interpreter.getState()->getX() &&
-          y == interpreter.getState()->getY()) {
+      if (x == interpreter.getState().getX() &&
+          y == interpreter.getState().getY()) {
         return std::make_shared<AutumnBool>(true);
       }
     }

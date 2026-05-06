@@ -1,23 +1,29 @@
 #include "AutumnExprValue.hpp"
-#include "AstPrinter.hpp"
 
 namespace Autumn {
-std::shared_ptr<AutumnExprType> AutumnExprType::instance = nullptr;
-
 std::string AutumnExprValue::toString() const {
   try {
-    return std::string("(" + AstPrinter().print(cexpr) + ": Expr)");
+    return std::string("(" + cexpr->prettyPrint() + ": Expr)");
   } catch (Error &e) {
     throw Error(std::string("Error Printing Expr value: ") + e.what());
   }
 }
 
-bool AutumnExprValue::isEqual(std::shared_ptr<AutumnValue> other) {
-  std::shared_ptr<AutumnExprValue> otherExpr =
-      std::dynamic_pointer_cast<AutumnExprValue>(other);
-  if (otherExpr == nullptr) {
-    return false;
+std::shared_ptr<AutumnValue>
+AutumnExprValue::binop_on(AutumnValue &rhs, const Token &op) {
+  switch (op.type) {
+  case TokenType::EQUAL_EQUAL:
+    return std::make_shared<AutumnBool>(equal_to(rhs));
+  case TokenType::BANG_EQUAL:
+    return std::make_shared<AutumnBool>(!equal_to(rhs));
+  default:
+    throw Error("Operator not supported on expr values");
   }
-  return cexpr == otherExpr->cexpr;
+}
+
+bool AutumnExprValue::equal_to(AutumnValue &rhs) { return rhs.equal_by_expr(*this); }
+
+bool AutumnExprValue::equal_by_expr(AutumnExprValue &lhs) {
+  return lhs.cexpr == cexpr;
 }
 } // namespace Autumn

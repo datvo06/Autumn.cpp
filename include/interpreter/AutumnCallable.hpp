@@ -14,7 +14,6 @@ public:
   virtual int arity() = 0;
   virtual ~AutumnCallable() = default;
   virtual std::string toString() const { return std::string("callable"); };
-  virtual std::shared_ptr<AutumnCallable> clone() = 0;
 };
 } // namespace Autumn
 

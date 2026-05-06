@@ -35,7 +35,7 @@ renderValue(Interpreter &interpreter, std::shared_ptr<AutumnValue> value) {
     }
     std::shared_ptr<AutumnCallableValue> render =
         std::dynamic_pointer_cast<AutumnCallableValue>(
-            pInstance->get("render"));
+            AutumnInstance::getWithMethod(pInstance, "render"));
     std::shared_ptr<AutumnValue> result = render->call(interpreter, {});
     return std::dynamic_pointer_cast<AutumnList>(result);
   } else {

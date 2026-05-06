@@ -1,4 +1,3 @@
-#include "AstPrinter.hpp"
 #include "AutumnClass.hpp"
 #include "Interpreter.hpp"
 #include "Parser.hpp"
@@ -48,13 +47,9 @@ int main(int argc, char **argv) {
     auto sexp = sexpresso::parse(getRenderedAnts);
     Autumn::SExpParser renderParser(getRenderedAnts);
     std::shared_ptr<Autumn::Expr> renderExpr = renderParser.parseExpr(sexp);
-    Autumn::AstPrinter printer;
-    std::cerr << "Render expr: "
-              << std::any_cast<std::string>(renderExpr->accept(printer))
-              << std::endl;
+    std::cerr << "Render expr: " << renderExpr->prettyPrint() << std::endl;
     std::shared_ptr<Autumn::AutumnValue> renderedAnts =
-        std::any_cast<std::shared_ptr<Autumn::AutumnValue>>(
-            renderExpr->accept(interpreter));
+        renderExpr->eval(interpreter);
 
     std::cout << std::endl << std::endl;
     std::cout << "Rendered ants: " << std::endl;

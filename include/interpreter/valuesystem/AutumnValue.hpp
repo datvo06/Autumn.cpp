@@ -3,163 +3,192 @@
 
 #include "AutumnType.hpp"
 #include "Error.hpp"
-#include <any>
-#include <iostream>
 #include <memory>
+#include <span>
 #include <string>
+#include <string_view>
+#include <variant>
 #include <vector>
 
 namespace Autumn {
-  /* // TODO: THIS IS A MUCH BIGGER OPTIMIZATION, beware of going down this path
-template<typename... Types>
-class ValueVariant {
-    std::variant<Types...> data;
-public:
-    template<typename T>
-    T& get() { return std::get<T>(data); }
-};
 
-using AutumnValueVariant = ValueVariant<
-    int,                  // Number
-    std::string,         // String
-    bool,                // Bool
-    std::vector<std::shared_ptr<AutumnValue>>, // List
-    std::nullptr_t       // Null
+class Interpreter;
+class AutumnInstance;
+class AutumnExprValue;
+class AutumnCallableValue;
+class AutumnValue;
+
+// Non-owning view over the primitive payload of an AutumnValue.
+// Used by stdlib introspection (IsOutsideBounds, isFreePos, etc.). Callers
+// must not retain the view beyond the lifetime of the source value.
+using AutumnValueData = std::variant<
+    int,
+    bool,
+    std::string_view,
+    std::span<const std::shared_ptr<AutumnValue>>
 >;
 
-// TODO: Implement this with Autumn Values
-*/
 class AutumnValue {
   static int instCount;
 
 protected:
   int instId;
-  AutumnValue(int instId, std::any value, std::shared_ptr<AutumnType> type)
-      : instId(instId), value(value), type(type) {}
+  AutumnValue(int instId, std::shared_ptr<AutumnType> type)
+      : instId(instId), type(type) {}
 
-  std::any value;
   std::shared_ptr<AutumnType> type;
 
 public:
-  AutumnValue(std::any value, std::shared_ptr<AutumnType> type)
-      : value(value), type(type) {
+  AutumnValue(std::shared_ptr<AutumnType> type) : type(type) {
     instId = instCount++;
-  } // This is for inner class definition
+  }
+
   virtual std::string toString() const = 0;
-  virtual bool isEqual(std::shared_ptr<AutumnValue> other) {
-    return false;
-  } // By default, return false
+  virtual void toString(std::string &acc) const { acc += toString(); }
+
+  // Binary operator dispatch (visitor-style double dispatch). See the
+  // refactor notes in AutumnValue.cpp for the full method matrix.
+  virtual std::shared_ptr<AutumnValue> binop_on(AutumnValue &rhs, const Token &op) = 0;
+  virtual bool equal_to(AutumnValue &rhs) = 0;
+
+  virtual int add_by_number(int lhs) { throw Error("Binary + requires two numbers"); }
+  virtual int sub_by_number(int lhs) { throw Error("Binary - requires two numbers"); }
+  virtual int mul_by_number(int lhs) { throw Error("Binary * requires two numbers"); }
+  virtual int div_by_number(int lhs) { throw Error("Binary / requires two numbers"); }
+  virtual int mod_by_number(int lhs) { throw Error("Binary % requires two numbers"); }
+
+  virtual bool greater_by_number(int lhs)       { throw Error("Binary > requires two numbers"); }
+  virtual bool greater_equal_by_number(int lhs) { throw Error("Binary >= requires two numbers"); }
+  virtual bool less_by_number(int lhs)          { throw Error("Binary < requires two numbers"); }
+  virtual bool less_equal_by_number(int lhs)    { throw Error("Binary <= requires two numbers"); }
+
+  virtual bool equal_by_number(int /*lhs*/)                                        { return false; }
+  virtual bool equal_by_bool(bool /*lhs*/)                                         { return false; }
+  virtual bool equal_by_string(const std::string & /*lhs*/)                        { return false; }
+  virtual bool equal_by_list(const std::vector<std::shared_ptr<AutumnValue>> & /*lhs*/) { return false; }
+  virtual bool equal_by_instance(AutumnInstance & /*lhs*/)                         { return false; }
+  virtual bool equal_by_expr(AutumnExprValue & /*lhs*/)                            { return false; }
+  virtual bool equal_by_callable(AutumnCallableValue & /*lhs*/)                    { return false; }
+
+  // Thin wrapper kept for legacy callers. Funnels through equal_to.
+  bool isEqual(std::shared_ptr<AutumnValue> other) {
+    if (!other) return false;
+    return equal_to(*other);
+  }
+
+  virtual std::shared_ptr<AutumnValue> eval_unary(const Token &op);
   virtual ~AutumnValue() = default;
   virtual bool isTruthy() { return true; }
-  virtual std::shared_ptr<AutumnValue> clone() = 0;
   int getInstId() { return instId; }
   void setInstId(int instId) { this->instId = instId; }
-  std::any getValue() { return value; }
-  void setValue(std::any value) { this->value = value; }
-  // copy
+
+  // Primitive-value introspection for stdlib. Default throws — only the
+  // four primitive subclasses override.
+  virtual AutumnValueData getValue() {
+    throw Error("getValue() not supported on this AutumnValue kind");
+  }
+
   virtual std::shared_ptr<AutumnValue> copy() = 0;
   std::shared_ptr<AutumnType> getType() { return type; }
 };
 
-class AutumnNumber final: public AutumnValue,
-                     public std::enable_shared_from_this<AutumnNumber> {
+class AutumnNumber final : public AutumnValue {
+  int value;
 
 public:
   AutumnNumber(int instId, int value)
-      : AutumnValue(instId, value, AutumnNumberType::getInstance()) {}
+      : AutumnValue(instId, AutumnNumberType::getInstance()), value(value) {}
   AutumnNumber(int value)
-      : AutumnValue(value, AutumnNumberType::getInstance()) {}
+      : AutumnValue(AutumnNumberType::getInstance()), value(value) {}
+
   std::string toString() const override {
-    return "(" + std::to_string(std::any_cast<int>(value)) + ": N)";
-  }
-  bool isEqual(std::shared_ptr<AutumnValue> other) override;
-  std::shared_ptr<AutumnValue> clone() override {
-    return shared_from_this();
+    return "(" + std::to_string(value) + ": N)";
   }
 
-  int getNumber() const { return std::any_cast<int>(value); }
-  AutumnNumber operator+(const AutumnNumber &other) const {
-    return AutumnNumber(getNumber() + other.getNumber());
-  }
+  AutumnValueData getValue() override { return value; }
+  int getNumber() const { return value; }
 
-  AutumnNumber operator-(const AutumnNumber &other) const {
-    return AutumnNumber(getNumber() - other.getNumber());
-  }
+  std::shared_ptr<AutumnValue> eval_unary(const Token &op) override;
+  std::shared_ptr<AutumnValue> binop_on(AutumnValue &rhs, const Token &op) override;
+  bool equal_to(AutumnValue &rhs) override;
 
-  AutumnNumber operator*(const AutumnNumber &other) const {
-    return AutumnNumber(getNumber() * other.getNumber());
-  }
+  int add_by_number(int lhs) override;
+  int sub_by_number(int lhs) override;
+  int mul_by_number(int lhs) override;
+  int div_by_number(int lhs) override;
+  int mod_by_number(int lhs) override;
 
-  AutumnNumber operator/(const AutumnNumber &other) const {
-    return AutumnNumber(getNumber() / other.getNumber());
-  }
+  bool greater_by_number(int lhs) override;
+  bool greater_equal_by_number(int lhs) override;
+  bool less_by_number(int lhs) override;
+  bool less_equal_by_number(int lhs) override;
+
+  bool equal_by_number(int lhs) override;
 
   std::shared_ptr<AutumnValue> copy() override {
-    return std::make_shared<AutumnNumber>(std::any_cast<int>(value));
+    return std::make_shared<AutumnNumber>(value);
   }
 };
-;
 
-class AutumnString final: public AutumnValue,
-                     public std::enable_shared_from_this<AutumnString> {
+class AutumnString final : public AutumnValue {
+  std::string value;
 
 public:
   AutumnString(int instId, std::string value)
-      : AutumnValue(instId, value, AutumnStringType::getInstance()) {}
+      : AutumnValue(instId, AutumnStringType::getInstance()), value(std::move(value)) {}
   AutumnString(std::string value)
-      : AutumnValue(value, AutumnStringType::getInstance()) {}
+      : AutumnValue(AutumnStringType::getInstance()), value(std::move(value)) {}
+
   std::string toString() const override {
-    return "(" + std::any_cast<std::string>(value) + ": S)";
+    return "(" + value + ": S)";
   }
 
-  bool isEqual(std::shared_ptr<AutumnValue> other) override;
-  std::shared_ptr<AutumnValue> clone() override {
-    return shared_from_this();
-  }
+  AutumnValueData getValue() override { return std::string_view(value); }
+  const std::string &getString() const { return value; }
 
-  std::string getString() const { return std::any_cast<std::string>(value); }
-  AutumnString operator+(const AutumnString &other) const {
-    return AutumnString(getString() + other.getString());
-  }
-
-  AutumnString(AutumnString &&other)
-      : AutumnValue(std::string(other.getString()),
-                    AutumnStringType::getInstance()) {}
+  std::shared_ptr<AutumnValue> binop_on(AutumnValue &rhs, const Token &op) override;
+  bool equal_to(AutumnValue &rhs) override;
+  bool equal_by_string(const std::string &lhs) override;
 
   std::shared_ptr<AutumnValue> copy() override {
-    return std::make_shared<AutumnString>(
-        std::string(std::any_cast<std::string>(value)));
+    return std::make_shared<AutumnString>(value);
   }
 };
 
-class AutumnBool final: public AutumnValue,
-                   public std::enable_shared_from_this<AutumnBool> {
+class AutumnBool final : public AutumnValue {
+  bool value;
+
 public:
-  AutumnBool(int instId, std::any value)
-      : AutumnValue(instId, value, AutumnBoolType::getInstance()) {}
-  AutumnBool(std::any value)
-      : AutumnValue(value, AutumnBoolType::getInstance()) {}
+  AutumnBool(int instId, bool value)
+      : AutumnValue(instId, AutumnBoolType::getInstance()), value(value) {}
+  AutumnBool(bool value)
+      : AutumnValue(AutumnBoolType::getInstance()), value(value) {}
+
   std::string toString() const override {
-    return std::string("(") + (std::any_cast<bool>(value) ? "true" : "false") +
-           ": " + type->toString() + ")";
+    return std::string("(") + (value ? "true" : "false") + ": " + type->toString() + ")";
   }
-  bool isEqual(std::shared_ptr<AutumnValue> other) override;
-  bool isTruthy() override { return std::any_cast<bool>(value); }
+  bool isTruthy() override { return value; }
 
-  std::shared_ptr<AutumnValue> clone() override {
-    return shared_from_this();
-  }
+  AutumnValueData getValue() override { return value; }
+  bool getBool() const { return value; }
 
-  bool getBool() const { return std::any_cast<bool>(value); }
-  AutumnBool(AutumnBool &other) : AutumnValue(other) {}
+  std::shared_ptr<AutumnValue> eval_unary(const Token &op) override;
+
+  std::shared_ptr<AutumnValue> binop_on(AutumnValue &rhs, const Token &op) override;
+  bool equal_to(AutumnValue &rhs) override;
+  bool equal_by_bool(bool lhs) override;
+  // Legacy coercion: number lhs equals bool rhs iff lhs == (value ? 1 : 0).
+  // Reverse (bool == number) is not coerced.
+  bool equal_by_number(int lhs) override;
 
   std::shared_ptr<AutumnValue> copy() override {
     return std::make_shared<AutumnBool>(value);
   }
 };
 
-class AutumnList final: public AutumnValue,
-                   public std::enable_shared_from_this<AutumnList> {
+class AutumnList final : public AutumnValue {
+  std::shared_ptr<std::vector<std::shared_ptr<AutumnValue>>> values;
+
 public:
   static std::shared_ptr<AutumnType>
   inferType(const std::vector<std::shared_ptr<AutumnValue>> &values) {
@@ -179,116 +208,72 @@ public:
 
   AutumnList(int instId,
              std::shared_ptr<std::vector<std::shared_ptr<AutumnValue>>> values)
-      : AutumnValue(instId, values, inferType(*values)) {}
+      : AutumnValue(instId, inferType(*values)), values(std::move(values)) {}
 
   AutumnList(std::shared_ptr<std::vector<std::shared_ptr<AutumnValue>>> values)
-      : AutumnValue(values, inferType(*values)) {}
+      : AutumnValue(inferType(*values)), values(std::move(values)) {}
 
   AutumnList()
-      : AutumnValue(std::make_shared<std::vector<std::shared_ptr<AutumnValue>>>(
-                        std::vector<std::shared_ptr<AutumnValue>>({})),
-                    AutumnListType::getInstance()) {}
+      : AutumnValue(AutumnListType::getInstance()),
+        values(std::make_shared<std::vector<std::shared_ptr<AutumnValue>>>()) {}
+
+  AutumnValueData getValue() override {
+    return std::span<const std::shared_ptr<AutumnValue>>(*values);
+  }
+
+  std::shared_ptr<AutumnValue> binop_on(AutumnValue &rhs, const Token &op) override;
+  bool equal_to(AutumnValue &rhs) override;
+  bool equal_by_list(const std::vector<std::shared_ptr<AutumnValue>> &lhs) override;
 
   std::string toString() const override {
-    std::string result = "([";
-    std::shared_ptr<std::vector<std::shared_ptr<AutumnValue>>> plist;
-    try {
-      plist = std::any_cast<
-          std::shared_ptr<std::vector<std::shared_ptr<AutumnValue>>>>(value);
-      result.reserve(2 + (plist->size() * 20) + (plist->size() - 1) * 2 + 3 + type->toString().length());
-    } catch (const std::bad_any_cast &e) {
-      std::cerr << "Error in toString(): bad_any_cast for 'value'."
-                << std::endl;
-      return "([Invalid List])";
-    }
+    std::string s;
+    toString(s);
+    return s;
+  }
 
-    if (!plist) {
-      std::cerr << "Error in toString(): 'plist' is null." << std::endl;
-      return "([Null List])";
+  void toString(std::string &acc) const override {
+    if (!values) {
+      acc += "([Null List])";
+      return;
     }
-
-    for (size_t i = 0; i < plist->size(); i++) {
-      auto &element = (*plist)[i];
+    acc += "([";
+    for (size_t i = 0; i < values->size(); i++) {
+      auto &element = (*values)[i];
       if (!element) {
-        std::cerr << "WARNING: Element at index " << i << " is null."
-                  << std::endl;
-        result += "null";
+        acc += "null";
       } else {
         try {
-          result += element->toString();
+          element->toString(acc);
         } catch (const std::exception &e) {
-          std::cerr << "Error in element->toString() at index " << i << ": "
-                    << e.what() << std::endl;
-          result += "error";
+          acc += "error";
         }
       }
-      if (i != plist->size() - 1) {
-        result += ", ";
-      }
+      if (i != values->size() - 1) acc += ", ";
     }
-    result += "] :" + (type ? type->toString() : "Unknown Type") + ")";
-    return result;
-  }
-  bool isEqual(std::shared_ptr<AutumnValue> other) override;
-
-  std::shared_ptr<AutumnValue> clone() override {
-    return shared_from_this();
+    acc += "] :";
+    if (type) type->toString(acc);
+    else acc += "Unknown Type";
+    acc += ")";
   }
 
   std::shared_ptr<std::vector<std::shared_ptr<AutumnValue>>> getValues() {
-    try {
-      return std::any_cast<
-          std::shared_ptr<std::vector<std::shared_ptr<AutumnValue>>>>(value);
-    } catch (std::bad_any_cast &e) {
-      std::cerr << "AutumnList::getValues Error: " << e.what() << std::endl;
-      throw e;
-    }
+    return values;
   }
 
   void add(std::shared_ptr<AutumnValue> elem);
+
   bool isTruthy() override {
-    // If value is nullptr, it's also false
-    if (value.has_value() == false) {
-      return false;
-    }
-    if (std::any_cast<
-            std::shared_ptr<std::vector<std::shared_ptr<AutumnValue>>>>(value)
-            ->size() == 0) {
-      return false;
-    }
-    return true;
+    return values && !values->empty();
   }
 
   std::shared_ptr<AutumnValue> copy() override {
-    auto pList = std::any_cast<
-        std::shared_ptr<std::vector<std::shared_ptr<AutumnValue>>>>(value);
     std::vector<std::shared_ptr<AutumnValue>> newlist;
-    newlist.reserve(pList->size());
-    for (size_t i = 0; i < pList->size(); i++) {
-      newlist.push_back((*pList)[i]->copy());
+    newlist.reserve(values->size());
+    for (const auto &v : *values) {
+      newlist.push_back(v->copy());
     }
-    auto pNewList =
-        std::make_shared<std::vector<std::shared_ptr<AutumnValue>>>(newlist);
-    return std::make_shared<AutumnList>(pNewList);
-  }
-};
-
-class AutumnNull final: public AutumnValue,
-                   public std::enable_shared_from_this<AutumnNull> {
-public:
-  AutumnNull(int instId, std::any value)
-      : AutumnValue(instId, value, AutumnUnknownType::getInstance()) {}
-  AutumnNull(std::any value)
-      : AutumnValue(value, AutumnUnknownType::getInstance()) {}
-  std::string toString() const override { return "null"; }
-  bool isEqual(std::shared_ptr<AutumnValue> other) override;
-  bool isTruthy() override { return false; }
-  std::shared_ptr<AutumnValue> clone() override {
-    return shared_from_this();
-  }
-
-  std::shared_ptr<AutumnValue> copy() override {
-    return std::make_shared<AutumnNull>(value);
+    return std::make_shared<AutumnList>(
+        std::make_shared<std::vector<std::shared_ptr<AutumnValue>>>(std::move(newlist)));
   }
 };
 

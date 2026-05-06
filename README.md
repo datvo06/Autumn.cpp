@@ -1,141 +1,165 @@
-# Autumn.cpp (a.k.a. Autumn.Wasm) A CPP Implementation of Autumn that compiles to WASM (and more)
+# Autumn.cpp — A C++ Implementation of Autumn that compiles to WASM (and more)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-This repository hosts the Autumn interpreter, built with C++. It compiles to libraries usable in WebAssembly (`WASM`), `C++`, `Python` and `Julia`.
+C++ implementation of the [Autumn](https://doi.org/10.1145/3571249) DSL interpreter. Builds to a native binary, a Python extension module (`mara-autumn-cpp` wheel via pybind11), a WebAssembly bundle, and a Julia binding.
 
 ![Example Programs: Particles, Magnets, and Space Invader](assets/examples_small.gif)
 
-## Setting Up the Environment
-Create a Conda environment using the following command:
-```sh
-conda env create --file environment.yml
-```
+## Using a pre-built release
 
-## Using the pre-built package
-To avoid the hassle in re-building, please try visiting the [Release](https://github.com/BasisResearch/Autumn.cpp/releases) page. Download the corresponding version and use it according to the [Wiki](https://github.com/BasisResearch/Autumn.cpp/wiki)
-
-## Building the C++ Interpreter
-In general, install CMake, and as well as `requirements.txt`:
-```shell
-# on Mac:
-brew install cmake
-# on Linux
-apt install cmake
-# on both:
-pip install -r requirements.txt
-```
-Then build the python interpreter:
-```shell
-mkdir build && cd build
-cmake ..
-make -j20
-```
-
-### Install Julia Package
-Run julia and install CxxWrap
-```sh
-using Pkg
-Pkg.add("CxxWrap")
-```
-
-
-Compile the C++ interpreter by running:
-```sh
-mkdir build && cd build
-cmake .. -DCMAKE_PREFIX_PATH=$(julia -e 'using CxxWrap;print(joinpath(CxxWrap.prefix_path()), "/lib/cmake")')
-make  -j12
-cd ..
-```
-
-If you’re using macOS with Apple Silicon, use `cmake .. -DCMAKE_OSX_ARCHITECTURES=arm64` in place of `cmake ..` to ensures that all files are compiled and linked for arm64 architecture.
-
-
-
-## Running Autumn programs
-### Python
-Then, in the same folder, execute the following commands:
+Pre-built wheels and the WASM bundle are published per release at [BasisResearch/Autumn.cpp/releases](https://github.com/BasisResearch/Autumn.cpp/releases). To install the wheel:
 
 ```sh
-cp build/*.so .
-python python_test_mpl.py tests/grow.sexp 2> stderr_python.txt 
+pip install mara-autumn-cpp
+# or, from a downloaded wheel:
+pip install ./mara_autumn_cpp-*.whl
 ```
 
-If you want to visualize preset of animation, first, install `ffmpeq`
+After install, the extension is importable as `MARA.autumn_cpp.interpreter_module` (the package layout matches the `MARA` monorepo's expectations, but the wheel does not depend on MARA itself).
+
+## Building from source
+
+### Prerequisites
+
+- A C++20 compiler (clang or gcc)
+- CMake ≥ 3.18
+- Python ≥ 3.12 with development headers (use [`uv`](https://docs.astral.sh/uv/) to manage Python — see below)
+- For the WASM target: [Emscripten](https://emscripten.org/) (a helper script is included)
+
+### Quick start with `cmake`
+
+This builds just the native CLI + the C++ unit test — no Python toolchain needed. To also build the pybind11 Python extension, drop `-DAUTUMN_BUILD_PYTHON_MODULE=OFF` (it defaults to `ON`).
+
 ```sh
-# Mac
-brew install ffmpeg
-# Linux
-apt install ffmpeg libffmpeg
+# Configure
+cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DAUTUMN_BUILD_PYTHON_MODULE=OFF
+
+# Build
+cmake --build build -j
+
+# Run the test suite
+ctest --test-dir build --output-on-failure
 ```
 
+This produces:
 
-### Julia Build
-In your julia project:
+| Artifact | Path |
+|---|---|
+| Native CLI interpreter | `build/interpreter` |
+| Static C++ library | `build/libAutumnLib.a` |
+| Token-type unit test | `build/TokenTypeTest` |
+| Python extension module (when `AUTUMN_BUILD_PYTHON_MODULE=ON`) | `build/interpreter_module*.so` |
+
+### Building a wheel with `uv`
+
 ```sh
-using Pkg;
-Pkg.develop(path=joinpath(first(DEPOT_PATH), "packages", "AutumnInterpreter"))
-Pkg.add("Plots") # This is for visualization
-Pkg.add("PlotlyJS") # This is for visualization
-Pkg.add("JSON3") # This is for visualization
-Pkg.add("WebIO")
-Pkg.add("Observables")
-Pkg.add("JSExpr")
-using AutumnInterpreter
+uv build
+# wheel lands in dist/
 ```
 
-Finally, try out these tests:
-```shell
-julia test.jl
-julia test2.jl
-```
-The main purpose is to allow building Autumn agent in Julia. For interactive purpose, please use Python package.
+For multi-platform release wheels (manylinux x86_64/aarch64, macOS x86_64/arm64), the CI uses [`cibuildwheel`](https://cibuildwheel.pypa.io/) — see `.github/workflows/build.yml`.
 
+### Building the WASM bundle
 
-### WASM Build
 ```sh
 sh install_scripts/setup_emscripten.sh
 source ./emsdk/emsdk_env.sh
-make web
-cp interpreter_web.* ./flask_server/static/
+
+# Use the emscripten cmake wrapper to configure
+emcmake cmake -B build-wasm -S . -DCMAKE_BUILD_TYPE=Release
+
+# Once configured, build the project like you normally would
+cmake --build build-wasm -j
 ```
 
-# What's working?
-[BBQ](tests/bbq.sexp) [Egg](tests/egg.sexp) [Gravity 3](tests/gravity_3.sexp) [Grow](tests/grow.sexp) [Magnets](tests/magnets.sexp) [Paint](tests/paint.sexp) [Particles](tests/particles.sexp) [Sokoban II](tests/sokoban_ii.sexp) [Waterplug](tests/waterplug.sexp) [Game of Life](tests/gameOfLife.sexp) [Gravity 4](tests/gravity_4.sexp) [Ice](tests/ice.sexp) [Mario](tests/mario.sexp) [Particle 1](tests/particle_1.sexp) [Sand](tests/sand.sexp) [Sokoban](tests/sokoban.sexp) [Wind](tests/wind.sexp)
+Outputs `build-wasm/interpreter_web.js` and `build-wasm/interpreter_web.wasm`.
 
+### Building the Julia bindings
 
-# Bleeding Edge
-We welcome and hope to receive contributions in the following modules:
-- `python_test_mpl_ci.py` This is used for headless CI testing.
-- `python_test` is a faster interface under development, but is not working properly, use `python_test_mpl.py` instead.
+```sh
+julia -e 'using Pkg; Pkg.add("CxxWrap")'
+cmake -B build -S . -DCMAKE_PREFIX_PATH=$(julia -e 'using CxxWrap; print(joinpath(CxxWrap.prefix_path(), "lib/cmake"))')
+cmake --build build -j
+```
 
+If the Julia toolchain is detected at configure time, an `AutumnInterpreter` package is staged into Julia's depot.
 
-# Citations
+## Running Autumn programs
+
+### From Python
+
+After building (no wheel install required), a smoke-test runner:
+
+```sh
+PYTHONPATH=build .venv/bin/python python_test_mpl_ci.py tests/grow.sexp
+```
+
+For an interactive matplotlib viewer (accepts `step`, `click x y`, `left`/`right`/`up`/`down`, `q` on stdin):
+
+```sh
+.venv/bin/pip install matplotlib  # or: pip install -e '.[viz]'
+PYTHONPATH=build .venv/bin/python python_test_mpl.py tests/grow.sexp
+```
+
+Additional matplotlib viewers (drag-and-drop / multiple-choice / animation modes) live in `extras/`.
+
+### From the native CLI
+
+```sh
+./build/interpreter tests/grow.sexp
+```
+
+### From Julia
+
+```julia
+using Pkg
+Pkg.develop(path=joinpath(first(DEPOT_PATH), "packages", "AutumnInterpreter"))
+using AutumnInterpreter
+```
+
+See `test.jl` and `test2.jl` for example sessions.
+
+## Repository layout
+
+```
+src/                 — interpreter sources
+include/             — public headers (Expr, Stmt, Interpreter, Interner, …)
+tools/               — entry points: native CLI, pybind11 bindings,
+                       Julia bindings, WASM bindings, AST generator
+autumnstdlib/        — Autumn standard library (stdlib.sexp)
+tests/               — Autumn programs (.sexp) used as smoke / regression inputs
+test_suites/         — C++ unit tests (registered with ctest)
+extras/              — alternative matplotlib viewers
+python_pkg/          — Python package layout used by `cmake --install`
+.github/workflows/   — CI: wheel matrix + WASM build + tagged release
+```
+
+## Citation
+
 ```bibtex
 @article{das2023autumn,
-author = {Das, Ria and Tenenbaum, Joshua B. and Solar-Lezama, Armando and Tavares, Zenna},
-title = {Combining Functional and Automata Synthesis to Discover Causal Reactive Programs},
-year = {2023},
-issue_date = {January 2023},
-publisher = {Association for Computing Machinery},
-address = {New York, NY, USA},
-volume = {7},
-number = {POPL},
-url = {https://doi.org/10.1145/3571249},
-doi = {10.1145/3571249},
-journal = {Proc. ACM Program. Lang.},
-month = jan,
-articleno = {56},
-numpages = {31},
-keywords = {synthesis, reactive, causal, automata}
+  author       = {Das, Ria and Tenenbaum, Joshua B. and Solar-Lezama, Armando and Tavares, Zenna},
+  title        = {Combining Functional and Automata Synthesis to Discover Causal Reactive Programs},
+  year         = {2023},
+  publisher    = {Association for Computing Machinery},
+  journal      = {Proc. ACM Program. Lang.},
+  volume       = {7},
+  number       = {POPL},
+  articleno    = {56},
+  numpages     = {31},
+  doi          = {10.1145/3571249},
+  keywords     = {synthesis, reactive, causal, automata}
 }
 ```
 
-# License
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+## Acknowledgement
 
-# Acknowledgement
-We acknowledge the open-source projects and communities that made this interpreter possible:
-- The parser is made possible thanks to [Sexpresso - an S-Expression parser](https://github.com/BitPuffin/sexpresso)
+The s-expression parser is built on [Sexpresso](https://github.com/BitPuffin/sexpresso).
 
-# Contributors
-Dat Nguyen, Archana Warrier, Yichao Liang, Cambridge Yang, Michelangelo Naim, Zenna Tarvares
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+## Contributors
+
+Dat Nguyen, Archana Warrier, Yichao Liang, Cambridge Yang, Michelangelo Naim, Yiyun Liu, Zenna Tavares.

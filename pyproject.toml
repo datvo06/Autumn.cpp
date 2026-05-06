@@ -1,0 +1,26 @@
+[build-system]
+requires = ["scikit-build-core", "pybind11"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "mara-autumn-cpp"
+version = "1.0.0"
+description = "C++ implementation of the Autumn DSL interpreter, exposed as a Python extension via pybind11."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.12"
+
+[project.optional-dependencies]
+viz = ["matplotlib", "numpy"]
+
+[tool.scikit-build]
+build.targets = ["interpreter_module"]
+install.components = ["python_extension"]
+
+[tool.cibuildwheel]
+build = [
+    "cp31[234]-manylinux_x86_64",
+    "cp31[234]-manylinux_aarch64",
+    "cp31[234]-macosx_x86_64",
+    "cp31[234]-macosx_arm64",
+]

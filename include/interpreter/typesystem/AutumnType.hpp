@@ -3,69 +3,79 @@
 
 #include <memory>
 #include <string>
-#include <vector>
 
 namespace Autumn {
 class AutumnType {
 public:
-  virtual std::string toString() const = 0;
+  // Primary serialization: subclasses override this.
+  // O(n) append with an accumulator — basically a Haskell difference list.
+  virtual void toString(std::string &acc) const = 0;
+
+  // Convenience wrapper. Non-virtual: one definition for every subclass.
+  std::string toString() const {
+    std::string s;
+    toString(s);
+    return s;
+  }
+
   virtual ~AutumnType() = default;
   virtual bool operator==(const AutumnType &other) const {
     return toString() == other.toString();
   }
+
+protected:
+  // Passkey token used by nullary-singleton subclasses. Nested inside
+  // AutumnType so only code inside this file can construct one, which
+  // keeps the subclass constructors "private" for callers while still
+  // allowing std::make_shared to invoke them.
+  struct SingletonKey {
+    explicit SingletonKey() = default;
+  };
 };
 
 class AutumnNumberType : public AutumnType {
-  static std::shared_ptr<AutumnNumberType> instance;
-
 public:
+  explicit AutumnNumberType(SingletonKey) {}
+  using AutumnType::toString;
   static std::shared_ptr<AutumnNumberType> getInstance() {
-    if (instance == nullptr) {
-      instance = std::make_shared<AutumnNumberType>();
-    }
+    static auto instance = std::make_shared<AutumnNumberType>(SingletonKey{});
     return instance;
   }
-  std::string toString() const override { return "Number"; }
+  void toString(std::string &acc) const override { acc += "Number"; }
 };
 
 class AutumnStringType : public AutumnType {
-  static std::shared_ptr<AutumnStringType> instance;
-
 public:
+  explicit AutumnStringType(SingletonKey) {}
+  using AutumnType::toString;
   static std::shared_ptr<AutumnStringType> getInstance() {
-    if (instance == nullptr) {
-      instance = std::make_shared<AutumnStringType>();
-    }
+    static auto instance = std::make_shared<AutumnStringType>(SingletonKey{});
     return instance;
   }
-  std::string toString() const override { return "String"; }
+  void toString(std::string &acc) const override { acc += "String"; }
 };
 
 class AutumnBoolType : public AutumnType {
-  static std::shared_ptr<AutumnBoolType> instance;
-
 public:
+  explicit AutumnBoolType(SingletonKey) {}
+  using AutumnType::toString;
   static std::shared_ptr<AutumnBoolType> getInstance() {
-    if (instance == nullptr) {
-      instance = std::make_shared<AutumnBoolType>();
-    }
+    static auto instance = std::make_shared<AutumnBoolType>(SingletonKey{});
     return instance;
   }
-  std::string toString() const override { return "Bool"; }
+  void toString(std::string &acc) const override { acc += "Bool"; }
 };
 
 class AutumnUnknownType : public AutumnType {
-  static std::shared_ptr<AutumnUnknownType> instance;
-
 public:
+  explicit AutumnUnknownType(SingletonKey) {}
+  using AutumnType::toString;
   bool operator==(const AutumnType &other) const override { return false; }
   static std::shared_ptr<AutumnUnknownType> getInstance() {
-    if (instance == nullptr) {
-      instance = std::make_shared<AutumnUnknownType>();
-    }
+    static auto instance = std::make_shared<AutumnUnknownType>(SingletonKey{});
     return instance;
   }
-  std::string toString() const override { return "Unknown"; }
+  void toString(std::string &acc) const override { acc += "Unknown"; }
 };
 
 class AutumnListType : public AutumnType {
@@ -73,6 +83,7 @@ private:
   std::shared_ptr<AutumnType> elementType;
 
 public:
+  using AutumnType::toString;
   AutumnListType(std::shared_ptr<AutumnType> elementType)
       : elementType(elementType) {}
 
@@ -96,8 +107,10 @@ public:
     return elementType->toString() == otherListType->elementType->toString();
   }
 
-  std::string toString() const override {
-    return "List<" + elementType->toString() + ">";
+  void toString(std::string &acc) const override {
+    acc += "List<";
+    elementType->toString(acc);
+    acc += ">";
   }
 
   std::shared_ptr<AutumnType> getElementType() const { return elementType; }
@@ -108,6 +121,7 @@ private:
   std::shared_ptr<AutumnType> type;
 
 public:
+  using AutumnType::toString;
   AutumnMetaType(std::shared_ptr<AutumnType> type) : type(type) {}
 
   static std::shared_ptr<AutumnMetaType> getInstance() {
@@ -130,8 +144,10 @@ public:
     return type->toString() == otherMetaType->type->toString();
   }
 
-  std::string toString() const override {
-    return "Meta<" + type->toString() + ">";
+  void toString(std::string &acc) const override {
+    acc += "Meta<";
+    type->toString(acc);
+    acc += ">";
   }
 
   std::shared_ptr<AutumnType> getType() const { return type; }

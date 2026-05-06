@@ -1,5 +1,7 @@
 build/
+build-wasm/
 .cache/
+.venv/
 stderr*
 stdout*
 std*err*

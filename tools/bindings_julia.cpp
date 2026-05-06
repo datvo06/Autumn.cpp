@@ -18,7 +18,7 @@ public:
                        const std::string &stdlib = "",
                        const std::string &triggeringCondition = "",
                        uint64_t randomSeed = 42) {
-    Autumn::SExpParser parser(script);
+    Autumn::SExpParser parser(script, interpreter->getInterner());
     std::vector<std::shared_ptr<Autumn::Stmt>> stmts = parser.parseStmt();
     try {
       interpreter->start(stmts, stdlib, triggeringCondition, randomSeed);
@@ -30,7 +30,7 @@ public:
 
   std::string tmpExecuteStmt(const std::string &script) {
     std::shared_ptr<sexpresso::Sexp> sexp = sexpresso::parse(script);
-    Autumn::SExpParser parser(script);
+    Autumn::SExpParser parser(script, interpreter->getInterner());
     std::shared_ptr<Autumn::Stmt> stmt = parser.parseStmt(sexp, -1);
     try {
       interpreter->tmpExecuteStmt(stmt);
@@ -45,7 +45,7 @@ public:
   }
 
   void restoreEnvironment(const std::string &script, const std::string &stdlib, const std::string &triggeringCondition) {
-    Autumn::SExpParser parser(script);
+    Autumn::SExpParser parser(script, interpreter->getInterner());
     std::vector<std::shared_ptr<Autumn::Stmt>> stmts = parser.parseStmt();
     try {
       interpreter->start(stmts, stdlib, triggeringCondition);

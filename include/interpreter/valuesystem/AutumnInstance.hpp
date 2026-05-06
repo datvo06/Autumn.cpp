@@ -5,8 +5,7 @@
 #include <memory>
 
 namespace Autumn {
-class AutumnInstance : public AutumnValue,
-                       public std::enable_shared_from_this<AutumnInstance> {
+class AutumnInstance : public AutumnValue {
 private:
   std::shared_ptr<AutumnClass> aclass;
   std::unordered_map<std::string, std::shared_ptr<AutumnValue>> fields;
@@ -14,7 +13,7 @@ private:
 public:
   AutumnInstance(int instId, std::shared_ptr<AutumnClass> aclass,
                  std::vector<std::shared_ptr<AutumnValue>> fieldvalues)
-      : AutumnValue(instId, std::any(), aclass), aclass(aclass) {
+      : AutumnValue(instId, aclass), aclass(aclass) {
     const std::vector<std::string> &fieldnames = aclass->getFieldNames();
     if (fieldnames.size() != fieldvalues.size()) {
       throw Error("Error initializing class " + aclass->name +
@@ -39,7 +38,7 @@ public:
 
   AutumnInstance(std::shared_ptr<AutumnClass> aclass,
                  std::vector<std::shared_ptr<AutumnValue>> fieldvalues)
-      : AutumnValue(std::any(), aclass), aclass(aclass) {
+      : AutumnValue(aclass), aclass(aclass) {
     const std::vector<std::string> &fieldnames = aclass->getFieldNames();
     if (fieldnames.size() != fieldvalues.size()) {
       throw Error("Field names and values do not match in class " +
@@ -65,41 +64,51 @@ public:
   }
 
   std::string toString() const override {
-    std::string result = aclass->name + "{";
+    std::string s;
+    toString(s);
+    return s;
+  }
+
+  void toString(std::string &acc) const override {
+    acc += aclass->name;
+    acc += "{";
     int i = 0;
     for (const auto &key : aclass->getFieldNames()) {
       std::shared_ptr<AutumnValue> value = fields.at(key);
       if (value->getType()->toString() !=
-          aclass->getFieldTypes()[i]->toString() && aclass->getFieldTypes()[i]->toString() != "List<Unknown>"
-          && value->getType()->toString() != "List<Unknown>"
-          ) {
+              aclass->getFieldTypes()[i]->toString() &&
+          aclass->getFieldTypes()[i]->toString() != "List<Unknown>" &&
+          value->getType()->toString() != "List<Unknown>") {
         throw Error("Field type mismatch in toString: " + key + " with type " +
                     aclass->getFieldTypes()[i]->toString() + " vs " +
                     value->toString() + " in " + aclass->name);
       }
-      std::string valueString = value->toString();
-      // for each line, add a tab
-      std::string tabbedValueString = "";
-      for (const auto &line : valueString) {
-        tabbedValueString += line;
-        if (line == '\n') {
-          tabbedValueString += "\t";
-        }
+      if (i != 0) acc += ",";
+      acc += key;
+      acc += ": ";
+      // Indent nested content: emit the value into a temp buffer, then
+      // copy it over with a '\t' appended after every newline.
+      std::string child;
+      value->toString(child);
+      for (char c : child) {
+        acc += c;
+        if (c == '\n') acc += '\t';
       }
-      result += (i == 0 ? "" : ",") + key + ": " + tabbedValueString;
       i++;
     }
     if (fields.size() == 0) {
-      result += "None";
+      acc += "None";
     }
     if (aclass->methods.size() != 0) {
-      result += "\tMethods: ";
+      acc += "\tMethods: ";
       for (const auto &method : aclass->methods) {
-        result += "\n\t" + method.first + ": " + method.second->toString();
+        acc += "\n\t";
+        acc += method.first;
+        acc += ": ";
+        acc += method.second->toString();
       }
     }
-    result += "}";
-    return result;
+    acc += "}";
   }
 
   static std::string normalizeName(const std::string &name) {
@@ -112,33 +121,37 @@ public:
 
   std::string getClassName() { return aclass->name; }
 
+  // Field-only lookup. Throws if `name` is not a field on this instance.
+  // For call sites that also need method binding, use getWithMethod(self, name).
   std::shared_ptr<AutumnValue> get(const std::string &name) {
     std::string normalizedName = normalizeName(name);
-    if (fields.find(normalizedName) != fields.end()) {
-      // std::cerr << "Field found: " << normalizedName << std::endl;
-      return fields[normalizedName];
+    auto it = fields.find(normalizedName);
+    if (it != fields.end()) {
+      return it->second;
     }
-    /// Currently Autumn does not allow method call in class
-    try {
-      std::shared_ptr<AutumnMethod> method = aclass->findMethod(normalizedName);
-      if (method != nullptr) {
-        method->setInstance(shared_from_this());
-        // std::cerr << "Method found: " << std::endl;
-        // std::cerr << method->toString() << std::endl;
-        auto pCallableValue =
-            std::dynamic_pointer_cast<AutumnCallableValue>(method);
-        // std::cerr << "pCallableValue = " << pCallableValue->toString()
-        //           << std::endl;
-        return pCallableValue;
-      } else {
-        throw Error("Undefined property '" + name + "' for class " +
-                    aclass->name);
-      }
-    } catch (Error &e) {
-      throw Error("Undefined property '" + name + "' for class " +
-                  aclass->name + " - " + e.what());
+    throw Error("Undefined property '" + name + "' for class " +
+                aclass->name);
+  }
+
+  // Field-or-method lookup. `self` must be a shared_ptr owning this instance;
+  // it is used to bind any matching method. Takes self as a parameter so we
+  // don't need `enable_shared_from_this`.
+  static std::shared_ptr<AutumnValue>
+  getWithMethod(const std::shared_ptr<AutumnInstance> &self,
+                const std::string &name) {
+    std::string normalizedName = normalizeName(name);
+    auto it = self->fields.find(normalizedName);
+    if (it != self->fields.end()) {
+      return it->second;
     }
-    return nullptr;
+    std::shared_ptr<AutumnMethod> method =
+        self->aclass->findMethod(normalizedName);
+    if (method != nullptr) {
+      method->setInstance(self);
+      return std::dynamic_pointer_cast<AutumnCallableValue>(method);
+    }
+    throw Error("Undefined property '" + name + "' for class " +
+                self->aclass->name);
   }
 
   void set(const std::string &name, std::shared_ptr<AutumnValue> value) {
@@ -156,43 +169,38 @@ public:
                 "', all fields: " + aclass->toString());
   }
 
-  bool isEqual(std::shared_ptr<AutumnValue> other) override {
-    std::shared_ptr<AutumnInstance> otherInstance =
-        std::dynamic_pointer_cast<AutumnInstance>(other);
-    if (otherInstance == nullptr) {
-      return false;
+  std::shared_ptr<AutumnValue> binop_on(AutumnValue &rhs, const Token &op) override {
+    switch (op.type) {
+    case TokenType::EQUAL_EQUAL:
+      return std::make_shared<AutumnBool>(equal_to(rhs));
+    case TokenType::BANG_EQUAL:
+      return std::make_shared<AutumnBool>(!equal_to(rhs));
+    default:
+      throw Error("Operator not supported on instances");
     }
-    // Else, check matching in terms of fields
-    if (fields.size() != otherInstance->fields.size()) {
-      return false;
-    }
-    for (const auto &[key, value] : fields) {
-      if (otherInstance->fields.find(key) == otherInstance->fields.end()) {
-        return false;
-      }
-      if (!value->isEqual(otherInstance->fields[key])) {
-        return false;
-      }
-    }
-    return true;
   }
 
-  std::shared_ptr<AutumnValue> clone() override {
-    // TODO: Check if this breaks things.
-    // std::vector<std::shared_ptr<AutumnValue>> fieldvalues;
-    // fieldvalues.reserve(fields.size());
-    // for (auto &key : aclass->getFieldNames()) {
-    //   fieldvalues.push_back(fields[key]->clone());
-    // }
-    // return std::make_shared<AutumnInstance>(instId, aclass, fieldvalues);
-    return shared_from_this();
+  bool equal_to(AutumnValue &rhs) override { return rhs.equal_by_instance(*this); }
+
+  bool equal_by_instance(AutumnInstance &lhs) override {
+    if (lhs.fields.size() != fields.size()) return false;
+    for (const auto &[key, value] : lhs.fields) {
+      auto it = fields.find(key);
+      if (it == fields.end()) return false;
+      if (!value) {
+        if (it->second) return false;
+        continue;
+      }
+      if (!value->isEqual(it->second)) return false;
+    }
+    return true;
   }
 
   std::shared_ptr<AutumnValue> copy() override {
     std::vector<std::shared_ptr<AutumnValue>> fieldvalues;
     fieldvalues.reserve(fields.size());
     for (auto &key : aclass->getFieldNames()) {
-      fieldvalues.push_back(fields[key]->clone());
+      fieldvalues.push_back(fields[key]);
     }
 
     return std::make_shared<AutumnInstance>(aclass, fieldvalues);

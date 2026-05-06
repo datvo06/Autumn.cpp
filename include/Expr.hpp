@@ -1,288 +1,284 @@
 #ifndef EXPR_H
 #define EXPR_H
 
+#include "Interner.hpp"
 #include "Token.hpp"
-#include <any>
 #include <memory>
 #include <string>
 #include <vector>
 
 namespace Autumn {
 
-class Assign;
-class Binary;
-class Call;
-class Get;
-class Grouping;
-class Literal;
-class Logical;
-class Set;
-class Unary;
-class Lambda;
-class Variable;
-class TypeVariable;
-class TypeDecl;
-class ListTypeExpr;
-class ListVarExpr;
-class IfExpr;
-class Let;
-class InitNext;
+class AutumnValue;
+class Interpreter;
+class AutumnType;
 
 class Expr {
 public:
-  // Visitor interface
-  class Visitor {
-  public:
-    virtual std::any visitAssignExpr(std::shared_ptr<Assign> stmt) = 0;
-    virtual std::any visitBinaryExpr(std::shared_ptr<Binary> stmt) = 0;
-    virtual std::any visitCallExpr(std::shared_ptr<Call> stmt) = 0;
-    virtual std::any visitGetExpr(std::shared_ptr<Get> stmt) = 0;
-    virtual std::any visitGroupingExpr(std::shared_ptr<Grouping> stmt) = 0;
-    virtual std::any visitLiteralExpr(std::shared_ptr<Literal> stmt) = 0;
-    virtual std::any visitLogicalExpr(std::shared_ptr<Logical> stmt) = 0;
-    virtual std::any visitSetExpr(std::shared_ptr<Set> stmt) = 0;
-    virtual std::any visitUnaryExpr(std::shared_ptr<Unary> stmt) = 0;
-    virtual std::any visitLambdaExpr(std::shared_ptr<Lambda> stmt) = 0;
-    virtual std::any visitVariableExpr(std::shared_ptr<Variable> stmt) = 0;
-    virtual std::any
-    visitTypeVariableExpr(std::shared_ptr<TypeVariable> stmt) = 0;
-    virtual std::any visitTypeDeclExpr(std::shared_ptr<TypeDecl> stmt) = 0;
-    virtual std::any
-    visitListTypeExprExpr(std::shared_ptr<ListTypeExpr> stmt) = 0;
-    virtual std::any
-    visitListVarExprExpr(std::shared_ptr<ListVarExpr> stmt) = 0;
-    virtual std::any visitIfExprExpr(std::shared_ptr<IfExpr> stmt) = 0;
-    virtual std::any visitLetExpr(std::shared_ptr<Let> stmt) = 0;
-    virtual std::any visitInitNextExpr(std::shared_ptr<InitNext> stmt) = 0;
-    virtual ~Visitor() = default;
-  };
-
-  virtual std::any accept(Visitor &visitor) = 0;
+  virtual std::shared_ptr<AutumnValue> eval(Interpreter &interp) = 0;
+  virtual std::string prettyPrint() = 0;
+  virtual std::vector<std::string> collectVars() = 0;
+  virtual std::shared_ptr<AutumnType> resolveTypeExpr(Interpreter &interp);
   virtual ~Expr() = default;
 };
 
-class Assign : public Expr, public std::enable_shared_from_this<Assign> {
+class Assign : public Expr {
 public:
-  Assign(Token name, std::shared_ptr<Expr> value) : name(name), value(value) {}
+  Assign(Token name, Symbol nameId, std::shared_ptr<Expr> value)
+      : name(name), nameId(nameId), value(value) {}
 
-  std::any accept(Visitor &visitor) override {
-    return visitor.visitAssignExpr(shared_from_this());
-  }
+  std::shared_ptr<AutumnValue> eval(Interpreter &interp) override;
+  std::string prettyPrint() override;
+  std::vector<std::string> collectVars() override;
 
   const Token name;
+  const Symbol nameId;
   const std::shared_ptr<Expr> value;
 };
 
-class Binary : public Expr, public std::enable_shared_from_this<Binary> {
+class Binary : public Expr {
 public:
   Binary(std::shared_ptr<Expr> left, Token op, std::shared_ptr<Expr> right)
       : left(left), op(op), right(right) {}
 
-  std::any accept(Visitor &visitor) override {
-    return visitor.visitBinaryExpr(shared_from_this());
-  }
+  std::shared_ptr<AutumnValue> eval(Interpreter &interp) override;
+  std::string prettyPrint() override;
+  std::vector<std::string> collectVars() override;
 
   const std::shared_ptr<Expr> left;
   const Token op;
   const std::shared_ptr<Expr> right;
 };
 
-class Call : public Expr, public std::enable_shared_from_this<Call> {
+class Call : public Expr {
 public:
   Call(std::shared_ptr<Expr> callee,
        std::vector<std::shared_ptr<Expr>> arguments)
       : callee(callee), arguments(arguments) {}
 
-  std::any accept(Visitor &visitor) override {
-    return visitor.visitCallExpr(shared_from_this());
-  }
+  std::shared_ptr<AutumnValue> eval(Interpreter &interp) override;
+  std::string prettyPrint() override;
+  std::vector<std::string> collectVars() override;
 
   const std::shared_ptr<Expr> callee;
   const std::vector<std::shared_ptr<Expr>> arguments;
 };
 
-class Get : public Expr, public std::enable_shared_from_this<Get> {
+class Get : public Expr {
 public:
-  Get(std::shared_ptr<Expr> object, Token name) : object(object), name(name) {}
+  Get(std::shared_ptr<Expr> object, Token name, Symbol nameId)
+      : object(object), name(name), nameId(nameId) {}
 
-  std::any accept(Visitor &visitor) override {
-    return visitor.visitGetExpr(shared_from_this());
-  }
+  std::shared_ptr<AutumnValue> eval(Interpreter &interp) override;
+  std::string prettyPrint() override;
+  std::vector<std::string> collectVars() override;
 
   const std::shared_ptr<Expr> object;
   const Token name;
+  const Symbol nameId;
 };
 
-class Grouping : public Expr, public std::enable_shared_from_this<Grouping> {
+class Grouping : public Expr {
 public:
   Grouping(std::shared_ptr<Expr> expression) : expression(expression) {}
 
-  std::any accept(Visitor &visitor) override {
-    return visitor.visitGroupingExpr(shared_from_this());
-  }
+  std::shared_ptr<AutumnValue> eval(Interpreter &interp) override;
+  std::string prettyPrint() override;
+  std::vector<std::string> collectVars() override;
 
   const std::shared_ptr<Expr> expression;
 };
 
-class Literal : public Expr, public std::enable_shared_from_this<Literal> {
+class IntLiteral : public Expr {
 public:
-  Literal(std::any value) : value(value) {}
+  explicit IntLiteral(int value) : value(value) {}
 
-  std::any accept(Visitor &visitor) override {
-    return visitor.visitLiteralExpr(shared_from_this());
-  }
+  std::shared_ptr<AutumnValue> eval(Interpreter &interp) override;
+  std::string prettyPrint() override;
+  std::vector<std::string> collectVars() override { return {}; }
 
-  const std::any value;
+  const int value;
 };
 
-class Logical : public Expr, public std::enable_shared_from_this<Logical> {
+class BoolLiteral : public Expr {
+public:
+  explicit BoolLiteral(bool value) : value(value) {}
+
+  std::shared_ptr<AutumnValue> eval(Interpreter &interp) override;
+  std::string prettyPrint() override;
+  std::vector<std::string> collectVars() override { return {}; }
+
+  const bool value;
+};
+
+class StringLiteral : public Expr {
+public:
+  explicit StringLiteral(std::string value) : value(std::move(value)) {}
+
+  std::shared_ptr<AutumnValue> eval(Interpreter &interp) override;
+  std::string prettyPrint() override;
+  std::vector<std::string> collectVars() override { return {}; }
+
+  const std::string value;
+};
+
+class Logical : public Expr {
 public:
   Logical(std::shared_ptr<Expr> left, Token op, std::shared_ptr<Expr> right)
       : left(left), op(op), right(right) {}
 
-  std::any accept(Visitor &visitor) override {
-    return visitor.visitLogicalExpr(shared_from_this());
-  }
+  std::shared_ptr<AutumnValue> eval(Interpreter &interp) override;
+  std::string prettyPrint() override;
+  std::vector<std::string> collectVars() override;
 
   const std::shared_ptr<Expr> left;
   const Token op;
   const std::shared_ptr<Expr> right;
 };
 
-class Set : public Expr, public std::enable_shared_from_this<Set> {
+class Set : public Expr {
 public:
-  Set(std::shared_ptr<Expr> object, Token name, std::shared_ptr<Expr> value)
-      : object(object), name(name), value(value) {}
+  Set(std::shared_ptr<Expr> object, Token name, Symbol nameId,
+      std::shared_ptr<Expr> value)
+      : object(object), name(name), nameId(nameId), value(value) {}
 
-  std::any accept(Visitor &visitor) override {
-    return visitor.visitSetExpr(shared_from_this());
-  }
+  std::shared_ptr<AutumnValue> eval(Interpreter &interp) override;
+  std::string prettyPrint() override;
+  std::vector<std::string> collectVars() override;
 
   const std::shared_ptr<Expr> object;
   const Token name;
+  const Symbol nameId;
   const std::shared_ptr<Expr> value;
 };
 
-class Unary : public Expr, public std::enable_shared_from_this<Unary> {
+class Unary : public Expr {
 public:
   Unary(Token op, std::shared_ptr<Expr> right) : op(op), right(right) {}
 
-  std::any accept(Visitor &visitor) override {
-    return visitor.visitUnaryExpr(shared_from_this());
-  }
+  std::shared_ptr<AutumnValue> eval(Interpreter &interp) override;
+  std::string prettyPrint() override;
+  std::vector<std::string> collectVars() override;
 
   const Token op;
   const std::shared_ptr<Expr> right;
 };
 
-class Lambda : public Expr, public std::enable_shared_from_this<Lambda> {
+class Lambda : public Expr {
 public:
-  Lambda(std::vector<Token> params, std::shared_ptr<Expr> right)
-      : params(params), right(right) {}
+  Lambda(std::vector<Token> params, std::vector<Symbol> paramIds,
+         std::shared_ptr<Expr> right)
+      : params(params), paramIds(paramIds), right(right) {}
 
-  std::any accept(Visitor &visitor) override {
-    return visitor.visitLambdaExpr(shared_from_this());
-  }
+  std::shared_ptr<AutumnValue> eval(Interpreter &interp) override;
+  std::string prettyPrint() override;
+  std::vector<std::string> collectVars() override;
 
   const std::vector<Token> params;
+  const std::vector<Symbol> paramIds;
   const std::shared_ptr<Expr> right;
 };
 
-class Variable : public Expr, public std::enable_shared_from_this<Variable> {
+class Variable : public Expr {
 public:
-  Variable(Token name) : name(name) {}
+  Variable(Token name, Symbol nameId) : name(name), nameId(nameId) {}
 
-  std::any accept(Visitor &visitor) override {
-    return visitor.visitVariableExpr(shared_from_this());
-  }
+  std::shared_ptr<AutumnValue> eval(Interpreter &interp) override;
+  std::string prettyPrint() override;
+  std::vector<std::string> collectVars() override;
 
   const Token name;
+  const Symbol nameId;
 };
 
-class TypeVariable : public Expr,
-                     public std::enable_shared_from_this<TypeVariable> {
+class TypeVariable : public Expr {
 public:
-  TypeVariable(Token name) : name(name) {}
+  TypeVariable(Token name, Symbol nameId) : name(name), nameId(nameId) {}
 
-  std::any accept(Visitor &visitor) override {
-    return visitor.visitTypeVariableExpr(shared_from_this());
-  }
+  std::shared_ptr<AutumnValue> eval(Interpreter &interp) override;
+  std::string prettyPrint() override;
+  std::vector<std::string> collectVars() override { return {}; }
+  std::shared_ptr<AutumnType> resolveTypeExpr(Interpreter &interp) override;
 
   const Token name;
+  const Symbol nameId;
 };
 
-class TypeDecl : public Expr, public std::enable_shared_from_this<TypeDecl> {
-public:
-  TypeDecl(Token name, std::shared_ptr<Expr> typeexpr)
-      : name(name), typeexpr(typeexpr) {}
+class AutumnType; // forward decl for evalAsFieldDecl
 
-  std::any accept(Visitor &visitor) override {
-    return visitor.visitTypeDeclExpr(shared_from_this());
-  }
+class TypeDecl : public Expr {
+public:
+  TypeDecl(Token name, Symbol nameId, std::shared_ptr<Expr> typeexpr)
+      : name(name), nameId(nameId), typeexpr(typeexpr) {}
+
+  std::shared_ptr<AutumnValue> eval(Interpreter &interp) override;
+  std::pair<std::string, std::shared_ptr<AutumnType>> evalAsFieldDecl(Interpreter &interp);
+  std::string prettyPrint() override;
+  std::vector<std::string> collectVars() override { return {}; }
 
   const Token name;
+  const Symbol nameId;
   const std::shared_ptr<Expr> typeexpr;
 };
 
-class ListTypeExpr : public Expr,
-                     public std::enable_shared_from_this<ListTypeExpr> {
+class ListTypeExpr : public Expr {
 public:
   ListTypeExpr(std::shared_ptr<Expr> typeexpr) : typeexpr(typeexpr) {}
 
-  std::any accept(Visitor &visitor) override {
-    return visitor.visitListTypeExprExpr(shared_from_this());
-  }
+  std::shared_ptr<AutumnValue> eval(Interpreter &interp) override;
+  std::string prettyPrint() override;
+  std::vector<std::string> collectVars() override { return {}; }
+  std::shared_ptr<AutumnType> resolveTypeExpr(Interpreter &interp) override;
 
   const std::shared_ptr<Expr> typeexpr;
 };
 
-class ListVarExpr : public Expr,
-                    public std::enable_shared_from_this<ListVarExpr> {
+class ListVarExpr : public Expr {
 public:
   ListVarExpr(std::vector<std::shared_ptr<Expr>> varExprs)
       : varExprs(varExprs) {}
 
-  std::any accept(Visitor &visitor) override {
-    return visitor.visitListVarExprExpr(shared_from_this());
-  }
+  std::shared_ptr<AutumnValue> eval(Interpreter &interp) override;
+  std::string prettyPrint() override;
+  std::vector<std::string> collectVars() override;
 
   const std::vector<std::shared_ptr<Expr>> varExprs;
 };
 
-class IfExpr : public Expr, public std::enable_shared_from_this<IfExpr> {
+class IfExpr : public Expr {
 public:
   IfExpr(std::shared_ptr<Expr> condition, std::shared_ptr<Expr> thenBranch,
          std::shared_ptr<Expr> elseBranch)
       : condition(condition), thenBranch(thenBranch), elseBranch(elseBranch) {}
 
-  std::any accept(Visitor &visitor) override {
-    return visitor.visitIfExprExpr(shared_from_this());
-  }
+  std::shared_ptr<AutumnValue> eval(Interpreter &interp) override;
+  std::string prettyPrint() override;
+  std::vector<std::string> collectVars() override;
 
   const std::shared_ptr<Expr> condition;
   const std::shared_ptr<Expr> thenBranch;
   const std::shared_ptr<Expr> elseBranch;
 };
 
-class Let : public Expr, public std::enable_shared_from_this<Let> {
+class Let : public Expr {
 public:
   Let(std::vector<std::shared_ptr<Expr>> exprs) : exprs(exprs) {}
 
-  std::any accept(Visitor &visitor) override {
-    return visitor.visitLetExpr(shared_from_this());
-  }
+  std::shared_ptr<AutumnValue> eval(Interpreter &interp) override;
+  std::string prettyPrint() override;
+  std::vector<std::string> collectVars() override;
 
   const std::vector<std::shared_ptr<Expr>> exprs;
 };
 
-class InitNext : public Expr, public std::enable_shared_from_this<InitNext> {
+class InitNext : public Expr {
 public:
   InitNext(std::shared_ptr<Expr> initializer, std::shared_ptr<Expr> nextExpr)
       : initializer(initializer), nextExpr(nextExpr) {}
 
-  std::any accept(Visitor &visitor) override {
-    return visitor.visitInitNextExpr(shared_from_this());
-  }
+  std::shared_ptr<AutumnValue> eval(Interpreter &interp) override;
+  std::string prettyPrint() override;
+  std::vector<std::string> collectVars() override;
 
   const std::shared_ptr<Expr> initializer;
   const std::shared_ptr<Expr> nextExpr;

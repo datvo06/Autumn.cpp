@@ -3,6 +3,7 @@
 #include "AutumnCallable.hpp"
 #include "AutumnCallableValue.hpp"
 #include "AutumnType.hpp"
+#include <iostream>
 namespace Autumn {
 
 class AutumnInstance;
@@ -33,15 +34,6 @@ public:
 
   std::string toString() const override;
 
-  bool isEqual(std::shared_ptr<AutumnValue> other) override {
-    std::shared_ptr<AutumnMethod> otherMethod =
-        std::dynamic_pointer_cast<AutumnMethod>(other);
-    if (otherMethod == nullptr) {
-      return false;
-    }
-    return callable == otherMethod->callable;
-  }
-
   void setInstance(std::shared_ptr<AutumnInstance> instance) {
     if (instance == nullptr) {
       std::cerr << "Error Binding Method Instance: instance is null"
@@ -51,12 +43,8 @@ public:
     this->instance = instance;
   }
 
-  std::shared_ptr<AutumnValue> clone() override {
-    return shared_from_this();
-  }
-
   std::shared_ptr<AutumnValue> copy() override {
-    return shared_from_this();
+    return std::make_shared<AutumnMethod>(callable);
   }
 };
 
@@ -87,19 +75,52 @@ public:
 
   const std::vector<std::string> &getFieldNames() { return fieldnames; }
   std::shared_ptr<AutumnCallable> getInitializer() { return initializer; }
-  std::string toString() const override {
-    std::string results = "class " + name + " {";
+  using AutumnType::toString;
+  void toString(std::string &acc) const override {
+    acc += "class ";
+    acc += name;
+    acc += " {";
     for (size_t i = 0; i < fieldnames.size(); i++) {
-      results += fieldnames[i] + ": " + fieldtypes[i]->toString() + ", ";
+      acc += fieldnames[i];
+      acc += ": ";
+      fieldtypes[i]->toString(acc);
+      acc += ", ";
     }
-    results += "}";
-    // results += " having initializer: " +
-    //            (initializer == nullptr ? "None" : initializer->toString());
-    return results;
+    acc += "}";
   }
 
   const std::vector<std::shared_ptr<AutumnType>> &getFieldTypes() {
     return fieldtypes;
+  }
+};
+
+class AutumnClassValue : public AutumnValue {
+  std::shared_ptr<AutumnClass> aclass;
+
+public:
+  AutumnClassValue(std::shared_ptr<AutumnClass> aclass)
+      : AutumnValue(aclass), aclass(aclass) {}
+
+  std::string toString() const override { return aclass->toString(); }
+
+  // Note: equal is not reflexive. Figure out if that's intended
+  std::shared_ptr<AutumnValue> binop_on(AutumnValue & /*rhs*/, const Token &op) override {
+    switch (op.type) {
+    case TokenType::EQUAL_EQUAL:
+      return std::make_shared<AutumnBool>(false);
+    case TokenType::BANG_EQUAL:
+      return std::make_shared<AutumnBool>(true);
+    default:
+      throw Error("Operator not supported on class values");
+    }
+  }
+
+  bool equal_to(AutumnValue & /*rhs*/) override { return false; }
+
+  std::shared_ptr<AutumnClass> getClass() { return aclass; }
+
+  std::shared_ptr<AutumnValue> copy() override {
+    return std::make_shared<AutumnClassValue>(aclass);
   }
 };
 

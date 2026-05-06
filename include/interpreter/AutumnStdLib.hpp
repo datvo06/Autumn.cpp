@@ -8,8 +8,7 @@
 
 namespace Autumn {
 
-class RenderAll : public AutumnCallable,
-                 public std::enable_shared_from_this<RenderAll> {
+class RenderAll : public AutumnCallable {
 public:
   RenderAll() {}
   std::shared_ptr<AutumnValue>
@@ -17,13 +16,9 @@ public:
        const std::vector<std::shared_ptr<AutumnValue>> &arguments) override;
   int arity() override { return 0; }
   std::string toString() const override { return "<native fn: RenderAll>"; }
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class Defined : public AutumnCallable,
-               public std::enable_shared_from_this<Defined> {
+class Defined : public AutumnCallable {
 public:
   Defined() {}
   std::shared_ptr<AutumnValue>
@@ -31,13 +26,9 @@ public:
        const std::vector<std::shared_ptr<AutumnValue>> &arguments) override;
   int arity() override { return 1; }
   std::string toString() const override { return "<native fn: Defined>"; }
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class IsFreePos : public AutumnCallable,
-                 public std::enable_shared_from_this<IsFreePos> {
+class IsFreePos : public AutumnCallable {
 public:
   IsFreePos() {}
   std::shared_ptr<AutumnValue>
@@ -45,13 +36,9 @@ public:
        const std::vector<std::shared_ptr<AutumnValue>> &arguments) override;
   int arity() override { return 1; }
   std::string toString() const override { return "<native fn: IsFreePos>"; }
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class Print : public AutumnCallable,
-             public std::enable_shared_from_this<Print> {
+class Print : public AutumnCallable {
 public:
   Print() {}
   std::shared_ptr<AutumnValue>
@@ -59,13 +46,9 @@ public:
        const std::vector<std::shared_ptr<AutumnValue>> &arguments) override;
   int arity() override { return 1; }
   std::string toString() const override { return "<native fn: Print>"; }
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class Range : public AutumnCallable,
-             public std::enable_shared_from_this<Range> {
+class Range : public AutumnCallable {
 public:
   Range() {}
   std::shared_ptr<AutumnValue>
@@ -73,13 +56,9 @@ public:
        const std::vector<std::shared_ptr<AutumnValue>> &arguments) override;
   int arity() override { return 2; }
   std::string toString() const override { return "<native fn: Range>"; }
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class AllObjs : public AutumnCallable,
-               public std::enable_shared_from_this<AllObjs> {
+class AllObjs : public AutumnCallable {
 public:
   AllObjs() {}
   std::shared_ptr<AutumnValue>
@@ -87,13 +66,9 @@ public:
        const std::vector<std::shared_ptr<AutumnValue>> &arguments) override;
   int arity() override { return 0; }
   std::string toString() const override { return "<native fn: AllObjs>"; }
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class Rotate : public AutumnCallable,
-              public std::enable_shared_from_this<Rotate> {
+class Rotate : public AutumnCallable {
 public:
   Rotate() {}
   std::shared_ptr<AutumnValue>
@@ -101,13 +76,9 @@ public:
        const std::vector<std::shared_ptr<AutumnValue>> &arguments) override;
   int arity() override { return 1; }
   std::string toString() const override { return "<native fn: Rotate>"; }
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class Any : public AutumnCallable,
-           public std::enable_shared_from_this<Any> {
+class Any : public AutumnCallable {
 public:
   Any() {}
   std::shared_ptr<AutumnValue>
@@ -115,13 +86,9 @@ public:
        const std::vector<std::shared_ptr<AutumnValue>> &arguments) override;
   int arity() override { return 2; }
   std::string toString() const override { return "<native fn: Any>"; }
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class Foldl : public AutumnCallable,
-             public std::enable_shared_from_this<Foldl> {
+class Foldl : public AutumnCallable {
 public:
   Foldl() {}
   std::shared_ptr<AutumnValue>
@@ -129,13 +96,9 @@ public:
        const std::vector<std::shared_ptr<AutumnValue>> &arguments) override;
   int arity() override { return 3; }
   std::string toString() const override { return "<native fn: Foldl>"; }
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class IsList : public AutumnCallable,
-              public std::enable_shared_from_this<IsList> {
+class IsList : public AutumnCallable {
 public:
   IsList() {}
   std::shared_ptr<AutumnValue>
@@ -143,13 +106,9 @@ public:
        const std::vector<std::shared_ptr<AutumnValue>> &arguments) override;
   int arity() override { return 1; }
   std::string toString() const override { return "<native fn: IsList>"; }
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class Length : public AutumnCallable,
-              public std::enable_shared_from_this<Length> {
+class Length : public AutumnCallable {
 public:
   Length() {}
   std::shared_ptr<AutumnValue>
@@ -157,13 +116,9 @@ public:
        const std::vector<std::shared_ptr<AutumnValue>> &arguments) override;
   int arity() override { return 1; }
   std::string toString() const override { return "<native fn: ListSize>"; }
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class Head : public AutumnCallable,
-            public std::enable_shared_from_this<Head> {
+class Head : public AutumnCallable {
 public:
   Head() {}
   std::shared_ptr<AutumnValue>
@@ -171,13 +126,9 @@ public:
        const std::vector<std::shared_ptr<AutumnValue>> &arguments) override;
   int arity() override { return 1; }
   std::string toString() const override { return "<native fn: Head>"; }
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class At: public AutumnCallable,
-          public std::enable_shared_from_this<At> {
+class At: public AutumnCallable {
 public:
   At() {}
   std::shared_ptr<AutumnValue>
@@ -185,13 +136,9 @@ public:
        const std::vector<std::shared_ptr<AutumnValue>> &arguments) override;
   int arity() override { return 2; }
   std::string toString() const override { return "<native fn: At>"; }
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class Tail : public AutumnCallable,
-            public std::enable_shared_from_this<Tail> {
+class Tail : public AutumnCallable {
 public:
   Tail() {}
   std::shared_ptr<AutumnValue>
@@ -199,13 +146,9 @@ public:
        const std::vector<std::shared_ptr<AutumnValue>> &arguments) override;
   int arity() override { return 1; }
   std::string toString() const override { return "<native fn: Tail>"; }
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class Prev : public AutumnCallable,
-            public std::enable_shared_from_this<Prev> {
+class Prev : public AutumnCallable {
 public:
   Prev() {}
   std::shared_ptr<AutumnValue>
@@ -213,13 +156,9 @@ public:
        const std::vector<std::shared_ptr<AutumnValue>> &arguments) override;
   int arity() override;
   std::string toString() const override { return "<native fn: Prev>"; }
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class UniformChoice : public AutumnCallable,
-                     public std::enable_shared_from_this<UniformChoice> {
+class UniformChoice : public AutumnCallable {
 public:
   UniformChoice() {}
   std::shared_ptr<AutumnValue>
@@ -228,12 +167,8 @@ public:
   int arity() override;
   std::string toString() const override { return "<native fn: UniformChoice>"; }
 
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
-class IsOutSideBounds : public AutumnCallable,
-                       public std::enable_shared_from_this<IsOutSideBounds> {
+class IsOutSideBounds : public AutumnCallable {
 public:
   IsOutSideBounds() {}
   std::shared_ptr<AutumnValue>
@@ -244,13 +179,9 @@ public:
     return "<native fn: IsOutSideBounds>";
   }
 
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class Clicked : public AutumnCallable,
-               public std::enable_shared_from_this<Clicked> {
+class Clicked : public AutumnCallable {
 public:
   Clicked() {}
   std::shared_ptr<AutumnValue>
@@ -259,13 +190,9 @@ public:
   int arity() override;
   std::string toString() const override { return "<native fn: Clicked>"; }
 
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class DownPressed : public AutumnCallable,
-                   public std::enable_shared_from_this<DownPressed> {
+class DownPressed : public AutumnCallable {
 public:
   DownPressed() {}
   std::shared_ptr<AutumnValue>
@@ -274,13 +201,9 @@ public:
   int arity() override;
   std::string toString() const override { return "<native fn: DownPressed>"; }
 
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class LeftPressed : public AutumnCallable,
-                   public std::enable_shared_from_this<LeftPressed> {
+class LeftPressed : public AutumnCallable {
 public:
   LeftPressed() {}
   std::shared_ptr<AutumnValue>
@@ -289,13 +212,9 @@ public:
   int arity() override;
   std::string toString() const override { return "<native fn: LeftPressed>"; }
 
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class RightPressed : public AutumnCallable,
-                    public std::enable_shared_from_this<RightPressed> {
+class RightPressed : public AutumnCallable {
 public:
   RightPressed() {}
   std::shared_ptr<AutumnValue>
@@ -304,13 +223,9 @@ public:
   int arity() override;
   std::string toString() const override { return "<native fn: RightPressed>"; }
 
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class UpPressed : public AutumnCallable,
-                 public std::enable_shared_from_this<UpPressed> {
+class UpPressed : public AutumnCallable {
 public:
   UpPressed() {}
   std::shared_ptr<AutumnValue>
@@ -319,13 +234,9 @@ public:
   int arity() override;
   std::string toString() const override { return "<native fn: UpPressed>"; }
 
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class ObjClicked : public AutumnCallable,
-                  public std::enable_shared_from_this<ObjClicked> {
+class ObjClicked : public AutumnCallable {
 public:
   ObjClicked() {}
   std::shared_ptr<AutumnValue>
@@ -334,12 +245,8 @@ public:
   int arity() override;
   std::string toString() const override { return "<native fn: ObjClicked>"; }
 
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
-class AddObj : public AutumnCallable,
-              public std::enable_shared_from_this<AddObj> {
+class AddObj : public AutumnCallable {
 public:
   AddObj() {}
   std::shared_ptr<AutumnValue>
@@ -348,13 +255,9 @@ public:
   int arity() override;
   std::string toString() const override { return "<native fn: AddObj>"; }
 
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class RemoveObj : public AutumnCallable,
-                 public std::enable_shared_from_this<RemoveObj> {
+class RemoveObj : public AutumnCallable {
 public:
   RemoveObj() {}
   std::shared_ptr<AutumnValue>
@@ -363,13 +266,9 @@ public:
   int arity() override;
   std::string toString() const override { return "<native fn: RemoveObj>"; }
 
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class UpdateObj : public AutumnCallable,
-                 public std::enable_shared_from_this<UpdateObj> {
+class UpdateObj : public AutumnCallable {
 public:
   UpdateObj() {}
   std::shared_ptr<AutumnValue>
@@ -378,13 +277,9 @@ public:
   int arity() override;
   std::string toString() const override { return "<native fn: UpdateObj>"; }
 
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class AdjPositions : public AutumnCallable,
-                    public std::enable_shared_from_this<AdjPositions> {
+class AdjPositions : public AutumnCallable {
 public:
   AdjPositions() {}
   std::shared_ptr<AutumnValue>
@@ -393,13 +288,9 @@ public:
   int arity() override;
   std::string toString() const override { return "<native fn: AdjPositions>"; }
 
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class IsFree : public AutumnCallable,
-              public std::enable_shared_from_this<IsFree> {
+class IsFree : public AutumnCallable {
 public:
   IsFree() {}
   std::shared_ptr<AutumnValue>
@@ -408,13 +299,9 @@ public:
   int arity() override;
   std::string toString() const override { return "<native fn: IsFree>"; }
 
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class Rect : public AutumnCallable,
-            public std::enable_shared_from_this<Rect> {
+class Rect : public AutumnCallable {
 public:
   Rect() {}
   std::shared_ptr<AutumnValue>
@@ -423,13 +310,9 @@ public:
   int arity() override;
   std::string toString() const override { return "<native fn: Rect>"; }
 
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class Displacement : public AutumnCallable,
-                    public std::enable_shared_from_this<Displacement> {
+class Displacement : public AutumnCallable {
 public:
   Displacement() {}
   std::shared_ptr<AutumnValue>
@@ -438,13 +321,9 @@ public:
   int arity() override;
   std::string toString() const override { return "<native fn: Displacement>"; }
 
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class Adjacent : public AutumnCallable,
-                public std::enable_shared_from_this<Adjacent> {
+class Adjacent : public AutumnCallable {
 public:
   Adjacent() {}
   std::shared_ptr<AutumnValue>
@@ -453,13 +332,9 @@ public:
   int arity() override;
   std::string toString() const override { return "<native fn: Adjacent>"; }
 
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class AdjacentObjs : public AutumnCallable,
-                    public std::enable_shared_from_this<AdjacentObjs> {
+class AdjacentObjs : public AutumnCallable {
 public:
   AdjacentObjs() {}
   std::shared_ptr<AutumnValue>
@@ -468,13 +343,9 @@ public:
   int arity() override;
   std::string toString() const override { return "<native fn: AdjacentObjs>"; }
 
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class AdjacentObjsDiagonal : public AutumnCallable,
-                            public std::enable_shared_from_this<AdjacentObjsDiagonal> {
+class AdjacentObjsDiagonal : public AutumnCallable {
 public:
   AdjacentObjsDiagonal() {}
   std::shared_ptr<AutumnValue>
@@ -485,13 +356,9 @@ public:
     return "<native fn: AdjacentObjsDiagonal>";
   }
 
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class AdjacentDiag : public AutumnCallable,
-                    public std::enable_shared_from_this<AdjacentDiag> {
+class AdjacentDiag : public AutumnCallable {
 public:
   AdjacentDiag() {}
   std::shared_ptr<AutumnValue>
@@ -500,13 +367,9 @@ public:
   int arity() override;
   std::string toString() const override { return "<native fn: AdjacentDiag>"; }
 
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class Adj : public AutumnCallable,
-           public std::enable_shared_from_this<Adj> {
+class Adj : public AutumnCallable {
 public:
   Adj() {}
   std::shared_ptr<AutumnValue>
@@ -515,13 +378,9 @@ public:
   int arity() override;
   std::string toString() const override { return "<native fn: Adj>"; }
 
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class Map : public AutumnCallable,
-           public std::enable_shared_from_this<Map> {
+class Map : public AutumnCallable {
 public:
   Map() {}
   std::shared_ptr<AutumnValue>
@@ -530,9 +389,6 @@ public:
   int arity() override;
   std::string toString() const override { return "<native fn: Map>"; }
 
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 private:
   std::shared_ptr<AutumnValue> mapSequential(Interpreter &interpreter,
                                             std::shared_ptr<AutumnCallableValue> callable,
@@ -542,8 +398,7 @@ private:
                                             const std::vector<std::shared_ptr<AutumnValue>> &arguments);
 };
 
-class Filter : public AutumnCallable,
-              public std::enable_shared_from_this<Filter> {
+class Filter : public AutumnCallable {
 public:
   Filter() {}
   std::shared_ptr<AutumnValue>
@@ -552,13 +407,9 @@ public:
   int arity() override;
   std::string toString() const override { return "<native fn: Filter>"; }
 
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class IsWithinBounds : public AutumnCallable,
-                      public std::enable_shared_from_this<IsWithinBounds> {
+class IsWithinBounds : public AutumnCallable {
 public:
   IsWithinBounds() {}
   std::shared_ptr<AutumnValue>
@@ -569,13 +420,9 @@ public:
     return "<native fn: IsWithinBounds>";
   }
 
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class RandomPositions : public AutumnCallable,
-                       public std::enable_shared_from_this<RandomPositions> {
+class RandomPositions : public AutumnCallable {
 public:
   RandomPositions() {}
   std::shared_ptr<AutumnValue>
@@ -586,13 +433,9 @@ public:
     return "<native fn: RandomPositions>";
   }
 
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class AllPositions : public AutumnCallable,
-                    public std::enable_shared_from_this<AllPositions> {
+class AllPositions : public AutumnCallable {
 public:
   AllPositions() {}
   std::shared_ptr<AutumnValue>
@@ -601,13 +444,9 @@ public:
   int arity() override;
   std::string toString() const override { return "<native fn: AllPositions>"; }
 
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class Concat : public AutumnCallable,
-              public std::enable_shared_from_this<Concat> {
+class Concat : public AutumnCallable {
 public:
   Concat() {}
   std::shared_ptr<AutumnValue>
@@ -616,13 +455,9 @@ public:
   int arity() override;
   std::string toString() const override { return "<native fn: Concat>"; }
 
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class ArrayEqual : public AutumnCallable,
-                  public std::enable_shared_from_this<ArrayEqual> {
+class ArrayEqual : public AutumnCallable {
 public:
   ArrayEqual() {}
   std::shared_ptr<AutumnValue>
@@ -630,13 +465,9 @@ public:
        const std::vector<std::shared_ptr<AutumnValue>> &arguments) override;
   int arity() override { return 2; }
   std::string toString() const override { return "<native fn: ArrayEqual>"; }
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
-class Sqrt : public AutumnCallable,
-            public std::enable_shared_from_this<Sqrt> {
+class Sqrt : public AutumnCallable {
 public:
   Sqrt() {}
   std::shared_ptr<AutumnValue>
@@ -644,9 +475,6 @@ public:
        const std::vector<std::shared_ptr<AutumnValue>> &arguments) override;
   int arity() override { return 1; }
   std::string toString() const override { return "<native fn: Sqrt>"; }
-  std::shared_ptr<AutumnCallable> clone() override {
-    return shared_from_this();
-  }
 };
 
 } // namespace Autumn
