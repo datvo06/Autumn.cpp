@@ -1,5 +1,4 @@
 #include "AutumnStdComponents.hpp"
-#include "AstPrinter.hpp"
 #include "AutumnCallable.hpp"
 #include "AutumnCallableValue.hpp"
 #include "AutumnConstructor.hpp"
@@ -17,7 +16,6 @@
 #include <unordered_map>
 
 namespace Autumn {
-std::shared_ptr<AutumnFuncType> AutumnFuncType::instance = nullptr;
 // If class initializer is nullptr, then we take all values forwarded
 // Then use them as init
 // else if it is not null, it have to return a list of values
@@ -59,41 +57,53 @@ std::shared_ptr<AutumnType> makeObjectClass(
     fieldTypes.push_back(field.second);
   }
 
+  auto &interner = interpreter.getInterner();
+  const Symbol originId = interner.intern("origin");
+  const Symbol allCellsId = interner.intern("allCells");
+  const Symbol isListId = interner.intern("isList");
+
   std::vector<Token> paramLists;
+  std::vector<Symbol> paramIds;
 
   std::vector<std::shared_ptr<Expr>> fieldsExprs;
   fieldsExprs.reserve(fieldNames.size() + 1);
   for (auto fieldName : fieldNames) {
+    Symbol fieldId = interner.intern(fieldName);
     paramLists.push_back(Token(TokenType::IDENTIFIER, fieldName, nullptr, 0));
+    paramIds.push_back(fieldId);
     fieldsExprs.push_back(std::make_shared<Variable>(
-        Token(TokenType::IDENTIFIER, fieldName, nullptr, 0)));
+        Token(TokenType::IDENTIFIER, fieldName, nullptr, 0), fieldId));
   }
   std::vector<Token> paramListsWithPosition(paramLists);
   paramListsWithPosition.push_back(
       Token(TokenType::IDENTIFIER, "origin", nullptr, 0));
+  std::vector<Symbol> paramIdsWithPosition(paramIds);
+  paramIdsWithPosition.push_back(originId);
 
-  AstPrinter printer;
-  SExpParser tmpParser = SExpParser("");
+  SExpParser tmpParser = SExpParser("", interpreter.getInterner());
 
   fieldsExprs.push_back(std::make_shared<Variable>(
-      Token(TokenType::IDENTIFIER, "origin", nullptr, 0)));
+      Token(TokenType::IDENTIFIER, "origin", nullptr, 0), originId));
 
   // Wrap cell expr in a list add
   try {
     auto assignExpr = std::make_shared<Assign>(
-        Token(TokenType::IDENTIFIER, "allCells", nullptr, 0), cexpr);
+        Token(TokenType::IDENTIFIER, "allCells", nullptr, 0), allCellsId,
+        cexpr);
     auto ifListTypeExpr = std::make_shared<Call>(
         std::make_shared<Variable>(
-            Token(TokenType::IDENTIFIER, "isList", nullptr, 0)),
+            Token(TokenType::IDENTIFIER, "isList", nullptr, 0), isListId),
         std::vector<std::shared_ptr<Expr>>({std::make_shared<Variable>(
-            Token(TokenType::IDENTIFIER, "allCells", nullptr, 0))}));
+            Token(TokenType::IDENTIFIER, "allCells", nullptr, 0),
+            allCellsId)}));
     auto ifListExpr = std::make_shared<IfExpr>(
         ifListTypeExpr,
         std::make_shared<Variable>(
-            Token(TokenType::IDENTIFIER, "allCells", nullptr, 0)),
+            Token(TokenType::IDENTIFIER, "allCells", nullptr, 0), allCellsId),
         std::make_shared<ListVarExpr>(
             std::vector<std::shared_ptr<Expr>>({std::make_shared<Variable>(
-                Token(TokenType::IDENTIFIER, "allCells", nullptr, 0))})));
+                Token(TokenType::IDENTIFIER, "allCells", nullptr, 0),
+                allCellsId)})));
 
     auto cellExprBlock = std::make_shared<Let>(
         std::vector<std::shared_ptr<Expr>>({assignExpr, ifListExpr}));
@@ -106,8 +116,8 @@ std::shared_ptr<AutumnType> makeObjectClass(
 
   std::shared_ptr<ListVarExpr> allFieldsExpr =
       std::make_shared<ListVarExpr>(fieldsExprs);
-  std::shared_ptr<Lambda> pLambda =
-      std::make_shared<Lambda>(paramListsWithPosition, allFieldsExpr);
+  std::shared_ptr<Lambda> pLambda = std::make_shared<Lambda>(
+      paramListsWithPosition, paramIdsWithPosition, allFieldsExpr);
 
   std::vector<std::string> fullFieldNames(fieldNames);
   fullFieldNames.push_back(std::string("origin"));
@@ -132,7 +142,7 @@ std::shared_ptr<AutumnType> makeObjectClass(
   std::shared_ptr<Lambda> renderExpr =
       std::dynamic_pointer_cast<Lambda>(tmpParser.parseExpr(renderLambda));
   std::shared_ptr<AutumnCallable> renderCallable =
-      std::make_shared<AutumnLambda>(renderExpr, nullptr);
+      std::make_shared<AutumnLambda>(*renderExpr, nullptr);
   if (renderCallable == nullptr) {
     throw std::runtime_error(
         "makeObjectClass: Failed to create callable for render method");

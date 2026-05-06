@@ -3,6 +3,7 @@
 
 #include "AutumnType.hpp"
 #include "AutumnValue.hpp"
+#include "Interner.hpp"
 #include "Token.hpp"
 #include <any>
 #include <memory>
@@ -25,35 +26,40 @@ struct pair_hash {
   }
 };
 
-class Environment : public std::enable_shared_from_this<Environment> {
+class Environment {
 private:
-  std::unordered_map<std::string, std::shared_ptr<AutumnValue>> values;
+  std::unordered_map<Symbol, std::shared_ptr<AutumnValue>> values;
 
-  std::unordered_map<std::string, bool> updateStates;
-  std::unordered_map<std::string, std::shared_ptr<AutumnType>> typeValues;
-  std::unordered_map<std::string, std::any> assignedTypes;
+  std::unordered_map<Symbol, bool> updateStates;
+  std::unordered_map<Symbol, std::shared_ptr<AutumnType>> typeValues;
+  std::unordered_map<Symbol, std::any> assignedTypes;
 
-  std::vector<std::string> definitionOrder;
+  std::vector<Symbol> definitionOrder;
 
   std::unordered_set<std::pair<int, int>, pair_hash> occupiedPositions;
   EnvironmentType environmentType;
 
+  // Used by the string-based overloads to intern on-the-fly. Inherited from
+  // the enclosing environment for sub-scopes; must be provided for globals.
+  Interner *interner_;
+
 protected:
   EnvironmentPtr enclosing;
-  
+
 
 public:
   // Constructors
 
-  // Default constructor: no enclosing environment (e.g., global scope)
-  Environment();
+  // Top-level constructor: caller must supply the Interner that will outlive
+  // this environment and all its nested scopes.
+  explicit Environment(Interner &interner);
 
-  // Constructor with an enclosing environment
+  // Constructor with an enclosing environment: interner is inherited.
   Environment(EnvironmentPtr enclosingEnv, EnvironmentType environmentType=EnvironmentType::LOCAL);
 
-  const std::vector<std::string> &getDefinitionOrder() {
-    return definitionOrder;
-  }
+  const std::vector<Symbol> &getDefinitionOrder() { return definitionOrder; }
+
+  Interner &getInterner() { return *interner_; }
 
   void clearOccupied() { occupiedPositions.clear(); }
 
@@ -63,75 +69,98 @@ public:
     return occupiedPositions.find({x, y}) == occupiedPositions.end();
   }
 
-  // Define a new variable in the current environment
-  void define(std::string name, std::shared_ptr<AutumnValue> value);
+  // --- Symbol-based hot-path APIs ---
+  void define(Symbol name, std::shared_ptr<AutumnValue> value);
+  void defineType(Symbol name, std::shared_ptr<AutumnType> type);
+  std::shared_ptr<AutumnValue> get(Symbol name);
+  std::shared_ptr<AutumnType> getTypeValue(Symbol name);
+  void assign(Symbol name, const std::shared_ptr<AutumnValue> &value);
+  void assignType(Symbol name, const std::shared_ptr<AutumnType> &type);
 
+  bool isDefined(Symbol name) { return values.find(name) != values.end(); }
+
+  // --- String-based overloads (intern on call; callers that have a pre-
+  //      computed Symbol should prefer the Symbol-based versions above). ---
+  void define(const std::string &name, std::shared_ptr<AutumnValue> value) {
+    define(interner_->intern(name), std::move(value));
+  }
+  void defineType(const std::string &name, std::shared_ptr<AutumnType> type) {
+    defineType(interner_->intern(name), std::move(type));
+  }
+  std::shared_ptr<AutumnValue> get(const std::string &name) {
+    return get(interner_->intern(name));
+  }
+  std::shared_ptr<AutumnValue> get(const Token &name) {
+    return get(interner_->intern(name.lexeme));
+  }
+  std::shared_ptr<AutumnType> getTypeValue(const Token &name) {
+    return getTypeValue(interner_->intern(name.lexeme));
+  }
+  void assign(const Token &name, const std::shared_ptr<AutumnValue> &value) {
+    assign(interner_->intern(name.lexeme), value);
+  }
+  void assign(const std::string &name,
+              const std::shared_ptr<AutumnValue> &value) {
+    assign(interner_->intern(name), value);
+  }
+  void assignType(const std::string &name,
+                  const std::shared_ptr<AutumnType> &type) {
+    assignType(interner_->intern(name), type);
+  }
   bool isDefined(const std::string &name) {
-    return values.find(name) != values.end();
+    return values.find(interner_->intern(name)) != values.end();
   }
 
-  void defineType(std::string name, std::shared_ptr<AutumnType> type);
-  // Get the value of a variable at a certain distance in the environment
-  // chain
+  // Get the value of a variable at a certain distance in the environment chain
   std::shared_ptr<AutumnValue> getAt(int distance, const std::string &name);
 
-  // Assign a new value to a variable at a certain distance in the environment
-  // chain
+  // Assign a new value to a variable at a certain distance in the environment chain
   void assignAt(int distance, const Token &name,
                 const std::shared_ptr<AutumnValue> &value);
 
-  // Retrieve the value of a variable, searching enclosing environments if
-  // necessary
-  std::shared_ptr<AutumnValue> get(const Token &name);
-  std::shared_ptr<AutumnValue> get(const std::string &name);
-
-  std::shared_ptr<AutumnType> getTypeValue(const Token &name);
-
-  // Assign a new value to a variable, searching enclosing environments if
-  // necessary
-  void assign(const Token &name, const std::shared_ptr<AutumnValue> &value);
-  void assign(const std::string &name,
-              const std::shared_ptr<AutumnValue> &value);
-
-  void assignType(std::string name, const std::shared_ptr<AutumnType> &type);
-
   std::shared_ptr<Environment> getEnclosing() { return enclosing; }
 
-  std::shared_ptr<AutumnType> getAssignedType(std::string name) {
-    if (assignedTypes.find(name) != assignedTypes.end()) {
-      return std::any_cast<std::shared_ptr<AutumnType>>(assignedTypes[name]);
+  std::shared_ptr<AutumnType> getAssignedType(Symbol name) {
+    if (auto it = assignedTypes.find(name); it != assignedTypes.end()) {
+      return std::any_cast<std::shared_ptr<AutumnType>>(it->second);
     }
     if (enclosing != nullptr) {
       return enclosing->getAssignedType(name);
     }
     return nullptr;
-  };
+  }
+  std::shared_ptr<AutumnType> getAssignedType(const std::string &name) {
+    return getAssignedType(interner_->intern(name));
+  }
 
   void resetUpdateStates();
   std::string printAllAssignedTypes() {
     std::string result = "";
     for (const auto &[key, value] : assignedTypes) {
-      result += key + " : " +
+      result += *key + " : " +
                 std::any_cast<std::shared_ptr<AutumnType>>(value)->toString() +
                 "\n";
     }
     return result;
   }
 
-  bool isUpdated(const std::string &name) {
-    if (updateStates.find(name) != updateStates.end()) {
-      return updateStates[name];
+  bool isUpdated(Symbol name) {
+    if (auto it = updateStates.find(name); it != updateStates.end()) {
+      return it->second;
     }
     if (enclosing != nullptr) {
       return enclosing->isUpdated(name);
     }
     return false;
   }
+  bool isUpdated(const std::string &name) {
+    return isUpdated(interner_->intern(name));
+  }
 
   std::string printAllDefinedVariables() {
     std::string result = "";
     for (const auto &[key, value] : values) {
-      result += key + " : " + value->toString() + "\n";
+      result += *key + " : " + value->toString() + "\n";
     }
     return result;
   }
@@ -139,7 +168,7 @@ public:
   std::string printAllDefinedVariablesCrossStack() {
     std::string result = "";
     for (const auto &[key, value] : values) {
-      result += key + " : " + value->toString() + "\n";
+      result += *key + " : " + value->toString() + "\n";
     }
     if (enclosing != nullptr) {
       result += enclosing->printAllDefinedVariablesCrossStack();
@@ -147,7 +176,7 @@ public:
     return result;
   }
 
-  const std::unordered_map<std::string, std::shared_ptr<AutumnValue>> &
+  const std::unordered_map<Symbol, std::shared_ptr<AutumnValue>> &
   getDefinedVariables() {
     return values;
   }
@@ -155,40 +184,27 @@ public:
   std::string printAllTypeValues() {
     std::string result = "";
     for (const auto &[key, value] : typeValues) {
-      result += key + " : " +
-                std::any_cast<std::shared_ptr<AutumnType>>(value)->toString() +
-                "\n";
+      result += *key + " : " + value->toString() + "\n";
     }
     return result;
   }
 
   EnvironmentPtr copy(EnvironmentPtr copiedEnclosing) {
     EnvironmentPtr newEnv = std::make_shared<Environment>(copiedEnclosing, environmentType);
-    // Deep copy value
-    std::unordered_map<std::string, std::shared_ptr<AutumnValue>> values;
-    for (const auto &[key, value] : this->values) {
-      values[key] = value->clone();
-    }
-    newEnv->values = values;
-    // Deep copy update states
-    std::unordered_map<std::string, bool> updateStates;
-    for (const auto &[key, value] : this->updateStates) {
-      updateStates[key] = value;
-    }
-    // Deep copy type values
-    std::unordered_map<std::string, std::shared_ptr<AutumnType>> typeValues;
-    for (const auto &[key, value] : this->typeValues) {
-      typeValues[key] = value;
-    }
-    newEnv->updateStates = updateStates;
-    newEnv->assignedTypes = assignedTypes;
-    newEnv->typeValues = typeValues;
+    // Constructor only inherits interner from the enclosing env; when
+    // copiedEnclosing is nullptr (top-level of the copied chain) we must
+    // propagate our own interner so the new env's string-based APIs work.
+    newEnv->interner_ = this->interner_;
+    newEnv->values = this->values;
+    newEnv->updateStates = this->updateStates;
+    newEnv->assignedTypes = this->assignedTypes;
+    newEnv->typeValues = this->typeValues;
     return newEnv;
   }
 
   void copyAll(EnvironmentPtr from) {
     for (const auto &[key, value] : from->values) {
-      values[key] = value->clone();
+      values[key] = value;
     }
     for (const auto &[key, value] : from->typeValues) {
       typeValues[key] = value;
@@ -204,29 +220,24 @@ public:
     }
   }
 
-  void selectiveCopy(EnvironmentPtr from, std::vector<std::string> keys) {
+  void selectiveCopy(EnvironmentPtr from, const std::vector<Symbol> &keys) {
+    auto inKeys = [&](Symbol k) {
+      return std::find(keys.begin(), keys.end(), k) != keys.end();
+    };
     for (const auto &[key, value] : from->values) {
-      if (std::find(keys.begin(), keys.end(), key) != keys.end()) {
-        values[key] = value->clone();
-      }
+      if (inKeys(key)) values[key] = value;
     }
     for (const auto &[key, value] : from->typeValues) {
       typeValues[key] = value;
     }
     for (const auto &[key, value] : from->updateStates) {
-      if (std::find(keys.begin(), keys.end(), key) != keys.end()) {
-        updateStates[key] = value;
-      }
+      if (inKeys(key)) updateStates[key] = value;
     }
     for (const auto &[key, value] : from->assignedTypes) {
-      if (std::find(keys.begin(), keys.end(), key) != keys.end()) {
-        assignedTypes[key] = value;
-      }
+      if (inKeys(key)) assignedTypes[key] = value;
     }
     for (auto key : from->definitionOrder) {
-      if (std::find(keys.begin(), keys.end(), key) != keys.end()) {
-        definitionOrder.push_back(key);
-      }
+      if (inKeys(key)) definitionOrder.push_back(key);
     }
   }
 
@@ -235,6 +246,7 @@ public:
 
   std::shared_ptr<AutumnValue> findId(int instId) {
     for (const auto &[key, value] : values) {
+      (void)key;
       if (value->getInstId() == instId) {
         return value;
       }
@@ -262,21 +274,14 @@ public:
 
 
   std::string toJson(std::string childScope = ""){
-    // Need to encode: values, updateStates, typeValues, assignedTypes
-    // std::unordered_map<std::string, std::shared_ptr<AutumnValue>> values;
-
-    // EnvironmentPtr enclosing;
-    // std::unordered_map<std::string, bool> updateStates;
-    // std::unordered_map<std::string, std::shared_ptr<AutumnType>> typeValues;
-    // std::unordered_map<std::string, std::any> assignedTypes;
     std::string result = "";
     std::unordered_map<std::string, std::string> varScope;
     for (const auto &[key, value] : values) {
-        varScope[key] = value->toString();
+        varScope[*key] = value->toString();
     }
     std::unordered_map<std::string, std::string> typeScope;
     for (const auto &[key, value] : typeValues) {
-        typeScope[key] = std::any_cast<std::shared_ptr<AutumnType>>(value)->toString();
+        typeScope[*key] = value->toString();
     }
     // Indent child scope
     std::string indent = "   ";
@@ -286,14 +291,13 @@ public:
     while (std::getline(ss, line)) {
       childScopeLines.push_back(line);
     }
-    for (int i = 0; i < childScopeLines.size(); i++) {
+    for (size_t i = 0; i < childScopeLines.size(); i++) {
       childScopeLines[i] = indent + childScopeLines[i];
     }
     result += "{\n";
     result += indent + "\"varValues\": {\n";
     for (const auto &[key, value] : varScope) {
       std::string valueStr = value;
-      // Sanitize the value string to be a valid JSON string
       valueStr = std::regex_replace(valueStr, std::regex("\\n"), "\\n");
       valueStr = std::regex_replace(valueStr, std::regex("\\r"), "\\r");
       valueStr = std::regex_replace(valueStr, std::regex("\\t"), "\\t");
@@ -306,10 +310,10 @@ public:
       result += indent + "    \"" + key + "\": \"" + value + "\",\n";
     }
     result += indent + "  }" + (childScope != "" ? ",\n" : "\n");
-    if (childScope != "") { // Only add child scope if it is not empty
+    if (childScope != "") {
       result += indent + "\"childScope\": \n";
-      for (const auto &line : childScopeLines) {
-        result += line + "\n";
+      for (const auto &l : childScopeLines) {
+        result += l + "\n";
       }
     }
     result += "}\n";
@@ -326,7 +330,7 @@ public:
 
 private:
   // Helper function to traverse to the ancestor environment at a given distance
-  EnvironmentPtr ancestor(int distance);
+  Environment *ancestor(int distance);
 };
 } // namespace Autumn
 

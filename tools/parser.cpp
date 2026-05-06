@@ -1,6 +1,5 @@
 #include "sexpresso.hpp"
 // adding file handling
-#include "AstPrinter.hpp"
 #include "Parser.hpp"
 #include <fstream>
 #include <iostream>
@@ -19,11 +18,10 @@ std::string readFile(const std::string &filename) {
 int main(int argc, char **argv) {
   std::string mysexpr = readFile(argv[1]);
   Autumn::SExpParser parser(mysexpr);
-  Autumn::AstPrinter printer;
   try {
     std::vector<std::shared_ptr<Autumn::Stmt>> stmts = parser.parseStmt();
     for (const auto &stmt : stmts) {
-      std::cout << printer.print(stmt) << std::endl;
+      std::cout << stmt->prettyPrint() << std::endl;
     }
   } catch (const std::runtime_error &e) {
     std::cerr << e.what() << std::endl;

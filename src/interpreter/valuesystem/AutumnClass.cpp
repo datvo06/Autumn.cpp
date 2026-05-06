@@ -20,9 +20,7 @@ AutumnMethod::call(Interpreter &interpreter,
     environment->define(fieldname, instance->get(fieldname));
   }
   // Execute the lambda's body within the new environment
-  std::shared_ptr<AutumnValue> retVal =
-      std::any_cast<std::shared_ptr<AutumnValue>>(
-          callable->call(interpreter, arguments));
+  std::shared_ptr<AutumnValue> retVal = callable->call(interpreter, arguments);
   // Restore the previous environment
   interpreter.setEnvironment(environment->getEnclosing());
   return retVal;

@@ -1,59 +1,76 @@
-cmake_minimum_required(VERSION 3.5)
-project(FunctionalInterpreter)
+cmake_minimum_required(VERSION 3.18)
+project(FunctionalInterpreter VERSION 1.0.0)
+
+# Force use of the specified Python3_EXECUTABLE if provided
+if(DEFINED Python3_EXECUTABLE)
+    set(Python3_EXECUTABLE "${Python3_EXECUTABLE}" CACHE FILEPATH "Python3 executable" FORCE)
+    set(PYTHON_EXECUTABLE "${Python3_EXECUTABLE}" CACHE FILEPATH "Python executable" FORCE)
+    message(STATUS "Using explicitly provided Python: ${Python3_EXECUTABLE}")
+endif()
 
 # Set C++ standard
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Enable lto by default
+set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
 
 # Emit compile_commands.json for use with clangd
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# If CXX contains clang, set -O3 -flto -fwhole-program-vtables  
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    set(contain_clang TRUE)
-else()
-    set(contain_clang FALSE)
-endif()
+file(GLOB_RECURSE SOURCES "src/*.cpp")
+include_directories(include include/interpreter include/lexer include/parser
+    include/interpreter/valuesystem include/interpreter/typesystem)
 
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
-    set(contain_gcc TRUE)
-endif()
+# Emscripten / WebAssembly build
+# Usage:
+#   emcmake cmake -S . -B build-wasm -DCMAKE_BUILD_TYPE=Release
+#   cmake --build build-wasm --target interpreter_web
+if(EMSCRIPTEN)
+    message(STATUS "Building for Emscripten/WASM (build type: ${CMAKE_BUILD_TYPE})")
 
-if(MSVC)                # built-in shortcut for 'CMAKE_CXX_COMPILER_ID STREQUAL "MSVC"'
-    set(contain_msvc TRUE)
-endif()
-message("CMAKE_CXX_COMPILER_ID: ${CMAKE_CXX_COMPILER_ID}")
-if(contain_clang)
-    message("Contain Clang")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -flto -fwhole-program-vtables")
-elseif(contain_gcc)
-    message("Contain GCC")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -flto \
-        -fno-semantic-interposition -fvisibility=hidden -fvisibility-inlines-hidden")
-elseif(contain_msvc)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /O2 /flto /GL")
+    add_executable(interpreter_web tools/bindings.cpp ${SOURCES})
+    set_target_properties(interpreter_web PROPERTIES SUFFIX ".js")
+
+    target_compile_options(interpreter_web PRIVATE
+        -fvisibility=hidden -fvisibility-inlines-hidden
+        -msimd128
+        -fwasm-exceptions)
+
+    target_link_options(interpreter_web PRIVATE
+        --bind
+        -fwasm-exceptions
+        "SHELL:-s EXPORT_ES6=1"
+        "SHELL:-s MODULARIZE=1"
+        "SHELL:-s EXPORT_NAME=createInterpreterModule"
+        "SHELL:-s ALLOW_MEMORY_GROWTH=1")
+
+    # Skip all the native-only machinery below (pybind11, Julia, shell tools).
+    return()
 endif()
 
 option(AUTUMN_DEV_MODE "Enable development mode with debug prints" OFF)
+option(AUTUMN_BUILD_PYTHON_MODULE "Build the pybind11 Python extension (interpreter_module)" ON)
 
 if(AUTUMN_DEV_MODE)
     add_definitions(-DAUTUMN_DEV_MODE)
 endif()
 
-file(GLOB_RECURSE SOURCES "src/*.cpp")
-
-# Include directories
-include_directories(include include/interpreter include/lexer include/parser include/interpreter/valuesystem include/interpreter/typesystem)
+# SOURCES and include_directories are declared near the top of this file so
+# both the WASM and native branches can share them.
 
 add_executable(sexp_parser tools/sexp_parser.cpp src/parser/sexpresso.cpp)
 add_executable(generate_ast tools/generate_ast.cpp)
 add_executable(lexer tools/lexer.cpp src/Token.cpp)
 add_executable(parser tools/parser.cpp src/Token.cpp src/parser/sexpresso.cpp)
 
+
 add_library(AutumnLib ${SOURCES})
 target_include_directories(AutumnLib PUBLIC
     ${PROJECT_SOURCE_DIR}
 )
+
+target_link_libraries(parser PRIVATE AutumnLib)
 
 add_executable(TokenTypeTest
     test_suites/test_token_type.cpp
@@ -64,20 +81,65 @@ target_link_libraries(TokenTypeTest PRIVATE AutumnLib)
 enable_testing()
 add_test(NAME TokenTypeTest COMMAND TokenTypeTest)
 
-# Set python executable path
-# Check if /opt/homebrew/bin/python exists
-if(EXISTS "/opt/homebrew/bin/python")
-    set(PYTHON_EXECUTABLE "/opt/homebrew/bin/python")
-endif()
-
 message("SOURCES: ${SOURCES}")
-# Create the executable
+# Create the native CLI executable
 add_executable(interpreter tools/main.cpp ${SOURCES})
 
-find_package(pybind11 REQUIRED)
+if(AUTUMN_BUILD_PYTHON_MODULE)
+    # Set python executable path
+    # If Python3_EXECUTABLE was passed to CMake, use it exclusively
+    if(NOT DEFINED Python3_EXECUTABLE OR NOT Python3_EXECUTABLE)
+        # Prefer in-tree venv at <source>/.venv, then Homebrew, then system Python
+        set(VENV_PYTHON "${CMAKE_SOURCE_DIR}/.venv/bin/python")
 
-# Create the Python module
-pybind11_add_module(interpreter_module tools/bindings_python.cpp ${SOURCES})
+        if(EXISTS "${VENV_PYTHON}")
+            set(Python3_EXECUTABLE "${VENV_PYTHON}" CACHE FILEPATH "Python3 executable" FORCE)
+            message(STATUS "Auto-detected venv Python: ${Python3_EXECUTABLE}")
+        elseif(EXISTS "/opt/homebrew/bin/python")
+            set(Python3_EXECUTABLE "/opt/homebrew/bin/python" CACHE FILEPATH "Python3 executable" FORCE)
+            message(STATUS "Auto-detected Homebrew Python: ${Python3_EXECUTABLE}")
+        else()
+            # Fall back to system Python
+            find_program(Python3_EXECUTABLE python3 python)
+            if(Python3_EXECUTABLE)
+                message(STATUS "Auto-detected system Python: ${Python3_EXECUTABLE}")
+            endif()
+        endif()
+    endif()
+
+    # Set PYTHON_EXECUTABLE for backwards compatibility
+    set(PYTHON_EXECUTABLE "${Python3_EXECUTABLE}")
+    message(STATUS "Final Python for build: ${Python3_EXECUTABLE}")
+
+    # Find Python3 FIRST with our specified executable
+    # This locks in the Python version before pybind11 tries to find it
+    find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Module)
+    message(STATUS "Locked Python3: ${Python3_EXECUTABLE} (version ${Python3_VERSION})")
+
+    # Find pybind11 - it will now use the Python3 we just locked in
+    find_package(pybind11 REQUIRED)
+
+    # Create the Python module
+    pybind11_add_module(interpreter_module tools/bindings_python.cpp ${SOURCES})
+
+    install(
+      TARGETS interpreter_module
+      LIBRARY DESTINATION MARA/autumn_cpp
+      COMPONENT python_extension
+    )
+
+    install(
+      FILES python_pkg/__init__.py
+      DESTINATION MARA/autumn_cpp
+      COMPONENT python_extension
+    )
+
+    install(
+      FILES python_pkg/autumnstdlib/__init__.py autumnstdlib/stdlib.sexp
+      DESTINATION MARA/autumn_cpp/autumnstdlib
+      COMPONENT python_extension
+    )
+endif()
 
 # Try to find Julia
 find_package(Julia QUIET)
@@ -97,7 +159,7 @@ if(NOT Julia_FOUND)
             COMMAND ${Julia_EXECUTABLE} --startup-file=no -e "print(joinpath(Sys.BINDIR, \"../include/julia\"))"
             OUTPUT_VARIABLE Julia_INCLUDE_DIRS
         )
-        
+
         find_library(Julia_LIBRARY
             NAMES julia libjulia
             PATHS ${Julia_LIBRARY_DIR}
@@ -115,7 +177,7 @@ endif()
 if(Julia_FOUND)
     message(STATUS "Found Julia: Building Julia bindings")
     find_package(JlCxx QUIET)
-    
+
     if(JlCxx_FOUND)
         # Get Julia package directory
         execute_process(

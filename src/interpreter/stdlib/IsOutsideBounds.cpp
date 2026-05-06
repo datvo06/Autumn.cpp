@@ -23,8 +23,7 @@ std::shared_ptr<AutumnValue> IsOutSideBounds::call(
       std::dynamic_pointer_cast<AutumnBool>(
           callable->call(interpreter, arguments));
   // Invert the result
-  return std::make_shared<AutumnBool>(
-      !std::any_cast<bool>(isWithinBoundRet->getValue()));
+  return std::make_shared<AutumnBool>(!isWithinBoundRet->getBool());
 }
 
 int IsOutSideBounds::arity() { return 1; }

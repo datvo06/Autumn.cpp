@@ -13,39 +13,36 @@
 namespace Autumn {
 
 class AutumnExprType : public AutumnType {
-
 public:
-  static std::shared_ptr<AutumnExprType> instance;
+  explicit AutumnExprType(SingletonKey) {}
+  using AutumnType::toString;
 
-  std::string toString() const override { return std::string("Expr"); }
+  void toString(std::string &acc) const override { acc += "Expr"; }
 
   static std::shared_ptr<AutumnExprType> getInstance() {
-    if (instance == nullptr) {
-      instance = std::make_shared<AutumnExprType>();
-    }
+    static auto instance = std::make_shared<AutumnExprType>(SingletonKey{});
     return instance;
   }
 };
 
-class AutumnExprValue : public AutumnValue, 
-                       public std::enable_shared_from_this<AutumnExprValue> {
+class AutumnExprValue : public AutumnValue {
 private:
   std::shared_ptr<Expr> cexpr;
   std::shared_ptr<Environment> cenv;
 
 public:
   AutumnExprValue(int instId, std::shared_ptr<Expr> cexpr, std::shared_ptr<Environment> cenv)
-      : AutumnValue(instId, cexpr, AutumnExprType::getInstance()),
+      : AutumnValue(instId, AutumnExprType::getInstance()),
         cexpr(cexpr), cenv(cenv) {}
 
   AutumnExprValue(std::shared_ptr<Expr> cexpr, std::shared_ptr<Environment> cenv)
-      : AutumnValue(cexpr, AutumnExprType::getInstance()), cexpr(cexpr), cenv(cenv) {}
+      : AutumnValue(AutumnExprType::getInstance()), cexpr(cexpr), cenv(cenv) {}
 
   std::string toString() const override;
-  bool isEqual(std::shared_ptr<AutumnValue> other) override;
-  std::shared_ptr<AutumnValue> clone() override {
-    return shared_from_this();
-  }
+
+  std::shared_ptr<AutumnValue> binop_on(AutumnValue &rhs, const Token &op) override;
+  bool equal_to(AutumnValue &rhs) override;
+  bool equal_by_expr(AutumnExprValue &lhs) override;
 
   std::shared_ptr<Expr> getExpr() { return cexpr; }
   std::shared_ptr<Environment> getCenv() { return cenv; }

@@ -23,9 +23,6 @@ public:
   }
   int arity() override { return 1; }
   std::string toString() const override { return "<native fn: Identity>"; }
-  std::shared_ptr<AutumnCallable> clone() override {
-    return std::make_shared<IdentityFunction>();
-  }
 };
 
 std::shared_ptr<AutumnValue>

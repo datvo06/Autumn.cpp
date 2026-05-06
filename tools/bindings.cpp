@@ -22,7 +22,7 @@ public:
                         const std::string &stdlib = "",
                         const std::string &triggeringCondition = "",
                         uint64_t randomSeed = 42) {
-    Autumn::SExpParser parser(script);
+    Autumn::SExpParser parser(script, interpreter->getInterner());
     std::vector<std::shared_ptr<Autumn::Stmt>> stmts = parser.parseStmt();
     try {
       interpreter->start(stmts, stdlib, triggeringCondition, randomSeed);
@@ -42,11 +42,11 @@ public:
 
   bool getTriggerState() { return interpreter->getTriggerState(); }
 
-  void click(int x, int y) { interpreter->getState()->click(x, y); }
-  void left() { interpreter->getState()->pushLeft(); }
-  void right() { interpreter->getState()->pushRight(); }
-  void up() { interpreter->getState()->pushUp(); }
-  void down() { interpreter->getState()->pushDown(); }
+  void click(int x, int y) { interpreter->getState().click(x, y); }
+  void left() { interpreter->getState().pushLeft(); }
+  void right() { interpreter->getState().pushRight(); }
+  void up() { interpreter->getState().pushUp(); }
+  void down() { interpreter->getState().pushDown(); }
 
   std::string renderAll() { return interpreter->renderAll(); }
   void setVerbose(bool verbose) { interpreter->setVerbose(verbose); }

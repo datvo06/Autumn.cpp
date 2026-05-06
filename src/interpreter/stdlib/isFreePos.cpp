@@ -27,8 +27,13 @@ IsFreePos::call(Interpreter &interpreter,
   if (pInstance->getClass() != PositionClass) {
     throw Error("isFreePos requires a Position instance as argument");
   }
-  int x = std::any_cast<int>(pInstance->get("x")->getValue());
-  int y = std::any_cast<int>(pInstance->get("y")->getValue());
+  auto xNum = std::dynamic_pointer_cast<AutumnNumber>(pInstance->get("x"));
+  auto yNum = std::dynamic_pointer_cast<AutumnNumber>(pInstance->get("y"));
+  if (!xNum || !yNum) {
+    throw Error("isFreePos: Position x and y must be numbers");
+  }
+  int x = xNum->getNumber();
+  int y = yNum->getNumber();
   return std::make_shared<AutumnBool>(
       interpreter.getGlobals()->isFreePos(x, y));
 }

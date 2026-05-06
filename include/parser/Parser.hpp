@@ -3,6 +3,7 @@
 
 #include "AutumnStdLib.hpp"
 #include "Expr.hpp"
+#include "Interner.hpp"
 #include "Lexer.hpp"
 #include "Stmt.hpp"
 #include "Token.hpp"
@@ -17,6 +18,14 @@ class SExpParser {
 private:
   const std::string &source;
   int current = 0;
+
+  // Interner used to create stable Symbol* handles for identifiers.
+  // Either external (borrowed, set via the two-arg constructor) or owned
+  // (default-constructed). Callers that feed ASTs to an Interpreter must
+  // pass the Interpreter's interner so Symbol identity is consistent
+  // across stdlib and user-program parses.
+  Interner ownedInterner_;
+  Interner *interner_ = &ownedInterner_;
 
   bool isBinaryOp(const TokenType &op) {
 
@@ -50,6 +59,10 @@ private:
 
 public:
   SExpParser(const std::string &source) : source(source) {}
+  SExpParser(const std::string &source, Interner &interner)
+      : source(source), interner_(&interner) {}
+
+  Interner &getInterner() { return *interner_; }
 
   std::shared_ptr<Expr> parseTypeExpr(std::shared_ptr<sexpresso::Sexp> sexp,
                                       int line = -1) {
@@ -74,8 +87,10 @@ public:
       if (tok.lexeme == "List") {
         return std::make_shared<ListTypeExpr>(parseTypeExpr(sexp->getChild(1)));
       }
-      return std::make_shared<TypeVariable>(Token(
-          TokenType::IDENTIFIER, head->getString(), head->getString(), line));
+      return std::make_shared<TypeVariable>(
+          Token(TokenType::IDENTIFIER, head->getString(), head->getString(),
+                line),
+          interner_->intern(head->getString()));
     } else {
       throw std::runtime_error("ParseError: Invalid type expression");
     }
@@ -92,7 +107,7 @@ public:
     }
     return std::make_shared<TypeDecl>(
         Token(tok.type, tok.lexeme, tok.literal, line),
-        parseTypeExpr(sexp->getChild(2)));
+        interner_->intern(tok.lexeme), parseTypeExpr(sexp->getChild(2)));
   }
 
   std::shared_ptr<Expr> parseIfExpr(std::shared_ptr<sexpresso::Sexp> sexp,
@@ -136,18 +151,19 @@ public:
       throw std::runtime_error("ParseError: Left hand side must be a variable");
     }
     if (var != nullptr) {
-      return std::make_shared<Assign>(var->name, rhs);
+      return std::make_shared<Assign>(var->name, var->nameId, rhs);
     } else {
-      return std::make_shared<Set>(get->object, get->name, rhs);
+      return std::make_shared<Set>(get->object, get->name, get->nameId, rhs);
     }
   }
 
   std::shared_ptr<Expr> parseGetExpr(std::shared_ptr<sexpresso::Sexp> sexp,
                                      int line) {
-    return std::make_shared<Get>(parseExpr(sexp->getChild(1), line),
-                                 Token(TokenType::IDENTIFIER,
-                                       sexp->getChild(2)->getString(),
-                                       sexp->getChild(2)->getString(), line));
+    return std::make_shared<Get>(
+        parseExpr(sexp->getChild(1), line),
+        Token(TokenType::IDENTIFIER, sexp->getChild(2)->getString(),
+              sexp->getChild(2)->getString(), line),
+        interner_->intern(sexp->getChild(2)->getString()));
   }
 
   std::shared_ptr<Expr> parseListVarExpr(std::shared_ptr<sexpresso::Sexp> sexp,
@@ -166,7 +182,7 @@ public:
       int num = std::stoi(toks[1].lexeme);
       return std::make_shared<Unary>(
           Token(toks[0].type, toks[0].lexeme, toks[0].literal, line),
-          std::make_shared<Literal>(num));
+          std::make_shared<IntLiteral>(num));
     }
     auto tok = Lexer(sexp->getChild(0)->getString()).scanTokens()[0];
     return std::make_shared<Unary>(
@@ -177,6 +193,7 @@ public:
   std::shared_ptr<Expr> parseFunction(std::shared_ptr<sexpresso::Sexp> sexp,
                                       int line) {
     std::vector<Token> params;
+    std::vector<Symbol> paramIds;
     auto child1 = sexp->getChild(1);
     if (!child1->isSexp() || child1->childCount() == 0) {
       Token param = Lexer(child1->getString()).scanTokens()[0];
@@ -186,7 +203,8 @@ public:
             sexp->toString());
       }
       if (param.type == TokenType::EOF_TOKEN) { // Empty function
-        return std::make_shared<Lambda>(params, parseExpr(sexp->getChild(2)));
+        return std::make_shared<Lambda>(params, paramIds,
+                                        parseExpr(sexp->getChild(2)));
       }
       if (param.type != TokenType::IDENTIFIER) {
         throw std::runtime_error("ParseError: Function parameter must be an "
@@ -194,6 +212,7 @@ public:
                                  TokenTypeToString(param.type));
       }
       params.push_back(Token(param.type, param.lexeme, param.literal, line));
+      paramIds.push_back(interner_->intern(param.lexeme));
     } else {
       for (int i = 0; i < child1->childCount(); i++) {
         auto tok = Lexer(child1->getChild(i)->getString()).scanTokens()[0];
@@ -204,9 +223,11 @@ public:
                                    TokenTypeToString(tok.type));
         }
         params.push_back(tok);
+        paramIds.push_back(interner_->intern(tok.lexeme));
       }
     }
-    return std::make_shared<Lambda>(params, parseExpr(sexp->getChild(2), line));
+    return std::make_shared<Lambda>(params, paramIds,
+                                    parseExpr(sexp->getChild(2), line));
   }
 
   std::shared_ptr<Expr> parseLetExpr(std::shared_ptr<sexpresso::Sexp> sexp,
@@ -250,29 +271,31 @@ public:
       } else if (tok.type == TokenType::DOTDOT) {
         return parseGetExpr(sexp, line);
       } else if (tok.type == TokenType::NUMBER) {
-        return std::make_shared<Literal>(std::stoi(tok.lexeme));
+        return std::make_shared<IntLiteral>(std::stoi(tok.lexeme));
       } else if (tok.type == TokenType::STRING) {
-        return std::make_shared<Literal>(tok.lexeme);
+        return std::make_shared<StringLiteral>(tok.lexeme);
       } else if (tok.type == TokenType::FUN) {
         return parseFunction(sexp, line);
       } else if (tok.type == TokenType::MAPTO) {
         return parseFunction(sexp, line);
       } else if (tok.type == TokenType::TRUE) {
-        return std::make_shared<Literal>(true);
+        return std::make_shared<BoolLiteral>(true);
       } else if (tok.type == TokenType::FALSE) {
-        return std::make_shared<Literal>(false);
+        return std::make_shared<BoolLiteral>(false);
       } else if (tok.type == TokenType::IDENTIFIER) {
         if (tok.lexeme == "list") {
           return parseListVarExpr(sexp, line);
         } else {
+          Symbol nameId = interner_->intern(tok.lexeme);
           if (sexp->childCount() == 1) {
-            return std::make_shared<Variable>(tok);
+            return std::make_shared<Variable>(tok, nameId);
           }
           std::vector<std::shared_ptr<Expr>> args;
           for (int i = 1; i < sexp->childCount(); i++) {
             args.push_back(parseExpr(sexp->getChild(i), line));
           }
-          return std::make_shared<Call>(std::make_shared<Variable>(tok), args);
+          return std::make_shared<Call>(
+              std::make_shared<Variable>(tok, nameId), args);
         }
       } else {
         throw std::runtime_error("ParseError: Invalid expression" +
@@ -326,10 +349,10 @@ public:
     if (cexpr == nullptr) {
       throw std::runtime_error("ParseError: Cell field is required");
     }
-    return std::make_shared<Object>(Token(TokenType::IDENTIFIER,
-                                          name->getString(), name->getString(),
-                                          line),
-                                    fields, cexpr);
+    return std::make_shared<Object>(
+        Token(TokenType::IDENTIFIER, name->getString(), name->getString(),
+              line),
+        interner_->intern(name->getString()), fields, cexpr);
   }
 
   std::shared_ptr<Stmt> parseOnStmt(std::shared_ptr<sexpresso::Sexp> sexp,

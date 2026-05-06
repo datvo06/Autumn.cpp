@@ -1,6 +1,4 @@
-#include "VarCollector.hpp"
 #include "Interpreter.hpp"
-#include "AstPrinter.hpp"
 #include "AutumnCallableValue.hpp"
 #include "AutumnExprValue.hpp"
 #include "AutumnInstance.hpp"
@@ -32,7 +30,8 @@ Interpreter::Interpreter() {
 }
 
 void Interpreter::init(std::string stdlib) {
-  globals = std::make_shared<Environment>();
+  auto &interp = *this;
+  globals = std::make_shared<Environment>(interner_);
   environment = globals;
   // Reset onClauseCovered
   onClauseCovered.clear();
@@ -133,346 +132,116 @@ void Interpreter::init(std::string stdlib) {
   // read AutumnStdLib
   if (stdlib == "") {
     std::string autumnStdLib = readFile("autumnstdlib/stdlib.sexp");
-    SExpParser parser(autumnStdLib);
+    SExpParser parser(autumnStdLib, interner_);
     std::vector<std::shared_ptr<Stmt>> stmts = parser.parseStmt();
     for (const auto &stmt : stmts) {
-      stmt->accept(*this);
+      stmt->exec(interp);
     }
   } else {
-    SExpParser parser(stdlib);
+    SExpParser parser(stdlib, interner_);
     std::vector<std::shared_ptr<Stmt>> stmts = parser.parseStmt();
     for (const auto &stmt : stmts) {
-      stmt->accept(*this);
+      stmt->exec(interp);
     }
   }
 }
 
-// If need to be evaluated, evaluate as normal
-std::any Interpreter::visitLiteralExpr(std::shared_ptr<Literal> expr) {
-  std::any value = expr->value;
-  // Check if value is a number, a boolean, or a string
-  try {
-    return std::shared_ptr<AutumnValue>(
-        std::make_shared<AutumnNumber>(std::any_cast<int>(value)));
-  } catch (const std::bad_any_cast &) {
-    try {
-      return std::shared_ptr<AutumnValue>(
-          std::make_shared<AutumnBool>(std::any_cast<bool>(value)));
-    } catch (const std::bad_any_cast &) {
-      try {
-        return std::shared_ptr<AutumnValue>(
-            std::make_shared<AutumnString>(std::any_cast<std::string>(value)));
-      } catch (const std::bad_any_cast &) {
-        throw Error("Unknown type of literal");
-      }
-    }
-  }
+std::shared_ptr<AutumnValue> IntLiteral::eval(Interpreter &interp) {
+  return std::shared_ptr<AutumnValue>(
+      std::make_shared<AutumnNumber>(value));
 }
 
-std::any Interpreter::visitGroupingExpr(std::shared_ptr<Grouping> expr) {
+std::shared_ptr<AutumnValue> BoolLiteral::eval(Interpreter &interp) {
+  return std::shared_ptr<AutumnValue>(
+      std::make_shared<AutumnBool>(value));
+}
+
+std::shared_ptr<AutumnValue> StringLiteral::eval(Interpreter &interp) {
+  return std::shared_ptr<AutumnValue>(
+      std::make_shared<AutumnString>(value));
+}
+
+std::shared_ptr<AutumnValue> Grouping::eval(Interpreter &interp) {
   throw Error("This language does not supposed to have grouping :)");
 }
 
-std::any Interpreter::visitUnaryExpr(std::shared_ptr<Unary> expr) {
-  std::shared_ptr<AutumnValue> right;
-  try {
-    right =
-        std::any_cast<std::shared_ptr<AutumnValue>>(expr->right->accept(*this));
-  } catch (const std::bad_any_cast &) {
-    throw Error("Unary operator must be applied to a value");
-  }
-  switch (expr->op.type) {
-  case TokenType::MINUS: {
-    std::shared_ptr<AutumnNumber> rightNumber =
-        std::dynamic_pointer_cast<AutumnNumber>(right);
-    if (rightNumber == nullptr) {
-      throw Error("Unary - must be applied to a number");
-    }
-    // std::cerr << "Unary -" << rightNumber->getNumber() << std::endl;
-    return std::shared_ptr<AutumnValue>(
-        std::make_shared<AutumnNumber>(-rightNumber->getNumber()));
-  }
-  case TokenType::PLUS: {
-    std::shared_ptr<AutumnNumber> rightNumber =
-        std::dynamic_pointer_cast<AutumnNumber>(right);
-    if (rightNumber == nullptr) {
-      throw Error("Unary + must be applied to a number");
-    }
-    // std::cerr << "Unary +" << rightNumber->getNumber() << std::endl;
-    return std::shared_ptr<AutumnValue>(
-        std::make_shared<AutumnNumber>(rightNumber->getNumber()));
-  }
-  case TokenType::BANG: {
-    std::shared_ptr<AutumnBool> rightBool =
-        std::dynamic_pointer_cast<AutumnBool>(right);
-    if (rightBool == nullptr) {
-      throw Error("Unary ! must be applied to a boolean");
-    }
-    auto res = std::make_shared<AutumnBool>(!rightBool->getBool());
-    // std::cerr << "Unary !" << rightBool->getBool() << " = " << res->getBool()
-    //          << std::endl;
-    return std::dynamic_pointer_cast<AutumnValue>(res);
-  }
-  default:
-    throw Error("Unknown unary operator");
-  }
+std::shared_ptr<AutumnValue> Unary::eval(Interpreter &interp) {
+  return right->eval(interp)->eval_unary(op);
 }
 
-std::pair<std::shared_ptr<AutumnNumber>, std::shared_ptr<AutumnNumber>>
-getBinaryNumber(std::shared_ptr<AutumnValue> left,
-                std::shared_ptr<AutumnValue> right) {
-  try {
-    std::shared_ptr<AutumnNumber> leftNumber =
-        std::dynamic_pointer_cast<AutumnNumber>(left);
-    std::shared_ptr<AutumnNumber> rightNumber =
-        std::dynamic_pointer_cast<AutumnNumber>(right);
-    if (leftNumber == nullptr || rightNumber == nullptr) {
-      throw Error("Binary operator must be applied to two numbers, instead got " +
-                  left->toString() + " and " + right->toString());
-    }
-    return std::make_pair(leftNumber, rightNumber);
-  } catch (const std::bad_any_cast &) {
-    throw Error("Binary operator must be applied to two numbers, instead got " +
-                left->toString() + " and " + right->toString());
-  }
+std::shared_ptr<AutumnValue> Binary::eval(Interpreter &interp) {
+  auto leftVal = left->eval(interp);
+  auto rightVal = right->eval(interp);
+  return leftVal->binop_on(*rightVal, op);
 }
 
-std::any Interpreter::visitBinaryExpr(std::shared_ptr<Binary> expr) {
-  std::shared_ptr<AutumnValue> left, right;
-  try {
-    left =
-        std::any_cast<std::shared_ptr<AutumnValue>>(expr->left->accept(*this));
-    right =
-        std::any_cast<std::shared_ptr<AutumnValue>>(expr->right->accept(*this));
-  } catch (const std::bad_any_cast &e) {
-    AstPrinter printer;
-    throw Error("Binary operator must be applied to a value, instead got " +
-                printer.print(expr->left) + " and " +
-                printer.print(expr->right));
+std::shared_ptr<AutumnValue> Variable::eval(Interpreter &interp) {
+  // Check type environment for class constructors
+  auto tv = interp.environment->getTypeValue(nameId);
+  if (tv != nullptr) {
+    auto cls = std::dynamic_pointer_cast<AutumnClass>(tv);
+    if (cls) return std::make_shared<AutumnClassValue>(cls);
+    // Non-class type (e.g., primitive type annotation) — fall through to value lookup
   }
-  std::shared_ptr<AutumnValue> res;
-  switch (expr->op.type) {
-  case TokenType::PLUS: {
-    try{
-      std::pair<std::shared_ptr<AutumnNumber>, std::shared_ptr<AutumnNumber>>
-          numbers = getBinaryNumber(left, right);
-      res = std::make_shared<AutumnNumber>(numbers.first->getNumber() +
-                                          numbers.second->getNumber());
-    } catch (const Error &e) {
-      throw Error("Binary + must be applied to two numbers, instead got " +
-                  left->toString() + " and " + right->toString() + " op: " + expr->op.lexeme + " - " + e.what());
-    }
-    break;
-  }
-  case TokenType::MINUS: {
-    try{
-      std::pair<std::shared_ptr<AutumnNumber>, std::shared_ptr<AutumnNumber>>
-          numbers = getBinaryNumber(left, right);
-      res = std::make_shared<AutumnNumber>(numbers.first->getNumber() -
-                                         numbers.second->getNumber());
-    } catch (const Error &e) {
-      throw Error("Binary - must be applied to two numbers, instead got " +
-                  left->toString() + " and " + right->toString() + " op: " + expr->op.lexeme + " - " + e.what());
-    }
-    break;
-  }
-  case TokenType::STAR: {
-    try{
-      std::pair<std::shared_ptr<AutumnNumber>, std::shared_ptr<AutumnNumber>>
-          numbers = getBinaryNumber(left, right);
-      res = std::make_shared<AutumnNumber>(numbers.first->getNumber() *
-                                         numbers.second->getNumber());
-    } catch (const Error &e) {
-      throw Error("Binary * must be applied to two numbers, instead got " +
-                  left->toString() + " and " + right->toString() + " op: " + expr->op.lexeme + " - " + e.what());
-    }
-    break;
-  }
-  case TokenType::SLASH: {
-    try{
-      std::pair<std::shared_ptr<AutumnNumber>, std::shared_ptr<AutumnNumber>>
-          numbers = getBinaryNumber(left, right);
-      res = std::make_shared<AutumnNumber>(numbers.first->getNumber() /
-                                         numbers.second->getNumber());
-    } catch (const Error &e) {
-      throw Error("Binary / must be applied to two numbers, instead got " +
-                  left->toString() + " and " + right->toString() + " op: " + expr->op.lexeme + " - " + e.what());
-    }
-    break;
-  }
-  case TokenType::MODULO: {
-    try{
-      std::pair<std::shared_ptr<AutumnNumber>, std::shared_ptr<AutumnNumber>>
-        numbers = getBinaryNumber(left, right);
-      res = std::make_shared<AutumnNumber>(numbers.first->getNumber() %
-                                         numbers.second->getNumber());
-    } catch (const Error &e) {
-      throw Error("Binary % must be applied to two numbers, instead got " +
-                  left->toString() + " and " + right->toString() + " op: " + expr->op.lexeme + " - " + e.what());
-    }
-    break;
-  }
-  case TokenType::GREATER: {
-    try{
-      std::pair<std::shared_ptr<AutumnNumber>, std::shared_ptr<AutumnNumber>>
-        numbers = getBinaryNumber(left, right);
-      res = std::make_shared<AutumnBool>(numbers.first->getNumber() >
-                                         numbers.second->getNumber());
-    } catch (const Error &e) {
-      throw Error("Binary > must be applied to two numbers, instead got " +
-                  left->toString() + " and " + right->toString() + " op: " + expr->op.lexeme + " - " + e.what());
-    }
-    break;
-  }
-  case TokenType::GREATER_EQUAL: {
-    try{
-      std::pair<std::shared_ptr<AutumnNumber>, std::shared_ptr<AutumnNumber>>
-        numbers = getBinaryNumber(left, right);
-      res = std::make_shared<AutumnBool>(numbers.first->getNumber() >=
-                                         numbers.second->getNumber());
-    } catch (const Error &e) {
-      throw Error("Binary >= must be applied to two numbers, instead got " +
-                  left->toString() + " and " + right->toString() + " op: " + expr->op.lexeme + " - " + e.what());
-    }
-    break;
-  }
-  case TokenType::LESS: {
-    try{
-      std::pair<std::shared_ptr<AutumnNumber>, std::shared_ptr<AutumnNumber>>
-        numbers = getBinaryNumber(left, right);
-      res = std::make_shared<AutumnBool>(numbers.first->getNumber() <
-                                       numbers.second->getNumber());
-    } catch (const Error &e) {
-      throw Error("Binary < must be applied to two numbers, instead got " +
-                  left->toString() + " and " + right->toString() + " op: " + expr->op.lexeme + " - " + e.what());
-    }
-    break;
-  }
-  case TokenType::LESS_EQUAL: {
-    try { 
-      std::pair<std::shared_ptr<AutumnNumber>, std::shared_ptr<AutumnNumber>>
-          numbers = getBinaryNumber(left, right);
-      res = std::make_shared<AutumnBool>(numbers.first->getNumber() <=
-                                         numbers.second->getNumber());
-    } catch (const Error &e) {
-      throw Error("Binary <= must be applied to two numbers, instead got " +
-                  left->toString() + " and " + right->toString() + " op: " + expr->op.lexeme + " - " + e.what());
-    }
-    break;
-  }
-  case TokenType::EQUAL_EQUAL: {
-    try {
-      // std::cout << "Comparing " << left->toString() << " and "
-      //          << right->toString() << std::endl;
-      res = std::dynamic_pointer_cast<AutumnValue>(
-          std::make_shared<AutumnBool>(left->isEqual(right)));
-      return res;
-      // std::cout << "Result: " << res->toString() << std::endl;
-      break;
-    } catch (const std::bad_any_cast &e) {
-      throw Error("Cannot compare different types");
-    }
-  }
-  case TokenType::BANG_EQUAL: {
-    try {
-      res = std::dynamic_pointer_cast<AutumnValue>(
-          std::make_shared<AutumnBool>(!left->isEqual(right)));
-      return res;
-    } catch (const std::bad_any_cast &e) {
-      throw Error("Cannot compare different types");
-    }
-  }
-  default:
-    throw Error("Unknown binary operator");
-  }
-  // std::cout << "Returning from binary: " << res->toString() << std::endl;
-  return std::dynamic_pointer_cast<AutumnValue>(res);
+  return interp.environment->get(nameId);
 }
 
-std::any Interpreter::visitVariableExpr(std::shared_ptr<Variable> expr) {
-  // std::cerr << "Visiting variable " << expr->name.lexeme << std::endl;
-  try {
-    std::shared_ptr<AutumnType> tv = std::any_cast<std::shared_ptr<AutumnType>>(
-        environment->getTypeValue(expr->name));
-    if (tv != nullptr) {
-      // std::cerr << "Getting type value " << tv->toString() << std::endl;
-      return tv;
-    }
-  } catch (const std::bad_any_cast &) {
-    std::cerr << "Failing to get type having name "
-              << environment->printAllTypeValues() << " - Must be a variable"
-              << std::endl;
-  }
-  try {
-    return environment->get(expr->name);
-  } catch (const RuntimeError &e) {
-    std::cerr << "Undefined variable '" + expr->name.lexeme + "'" +
-                 environment->printAllDefinedVariables() + "\n" +
-                 "Current expr: " + AstPrinter().print(expr);
-    throw Error("Undefined variable '" + expr->name.lexeme + "'" +
-                environment->printAllDefinedVariablesCrossStack() + "\n" +
-                "Current expr: " + AstPrinter().print(expr));
-  }
-}
-
-std::any Interpreter::visitAssignExpr(std::shared_ptr<Assign> expr) {
-  // std::cerr << "Assigning " << expr->name.lexeme << std::endl;
+std::shared_ptr<AutumnValue> Assign::eval(Interpreter &interp) {
+  // std::cerr << "Assigning " << name.lexeme << std::endl;
   std::shared_ptr<InitNext> initNext =
-      std::dynamic_pointer_cast<InitNext>(expr->value);
+      std::dynamic_pointer_cast<InitNext>(value);
   if (initNext != nullptr) {
-    initOrder.push_back(expr->name.lexeme);
-    initMap[expr->name.lexeme] = initNext->initializer;
-    nextMap[expr->name.lexeme] = initNext->nextExpr;
+    interp.initNextVars.push_back(
+        {nameId, initNext->initializer, initNext->nextExpr});
     return nullptr;
   }
 
-  std::any retVal = expr->value->accept(*this);
+  std::shared_ptr<AutumnValue> retVal = value->eval(interp);
   try {
     std::shared_ptr<AutumnValue> value =
-        std::any_cast<std::shared_ptr<AutumnValue>>(retVal);
-    auto isNameInGlobal = globals->isDefined(expr->name.lexeme);
+        retVal;
+    auto isNameInGlobal = interp.globals->isDefined(nameId);
     // Get type value
     std::shared_ptr<AutumnType> tv =
-        environment->getAssignedType(expr->name.lexeme);
+        interp.environment->getAssignedType(nameId);
     if (tv != nullptr &&
         std::dynamic_pointer_cast<AutumnListType>(tv) == nullptr) {
       if (tv->toString() != value->getType()->toString()) {
         throw Error("Cannot assign value of type '" +
                     value->getType()->toString() + "' to variable of type '" +
-                    tv->toString() + "' for variable '" + expr->name.lexeme +
+                    tv->toString() + "' for variable '" + name.lexeme +
                     "'.");
       }
     }
-    environment->assign(expr->name, value);
-    if (environment != globals && !isNameInGlobal) {
-      if (globals->isDefined(expr->name.lexeme)) {
+    interp.environment->assign(nameId, value);
+    if (interp.environment != interp.globals && !isNameInGlobal) {
+      if (interp.globals->isDefined(nameId)) {
         throw Error("Variable assigned at local scope became defined at global "
                     "scope: " +
-                    expr->name.lexeme); //+
-                    // "\n Global: " + globals->printAllDefinedVariables() +
-                    // "\n Local: " + environment->printAllDefinedVariables());
+                    name.lexeme); //+
+                    // "\n Global: " + interp.globals->printAllDefinedVariables() +
+                    // "\n Local: " + interp.environment->printAllDefinedVariables());
       }
     }
-    // std::cerr << "Assigned " << expr->name.lexeme << " to " <<
+    // std::cerr << "Assigned " << name.lexeme << " to " <<
     // value->toString()
     //           << std::endl;
     return value;
   } catch (const std::bad_any_cast &e) {
     throw Error("Assign only accept either value or InitNext " +
-                AstPrinter().print(expr->value));
+                value->prettyPrint());
   }
 }
 
-std::any Interpreter::visitLogicalExpr(std::shared_ptr<Logical> expr) {
-  std::shared_ptr<AutumnValue> left =
-      std::any_cast<std::shared_ptr<AutumnValue>>(expr->left->accept(*this));
-  auto callableLeft = std::dynamic_pointer_cast<AutumnCallableValue>(left);
+std::shared_ptr<AutumnValue> Logical::eval(Interpreter &interp) {
+  auto left_val = left->eval(interp);
+  auto callableLeft = std::dynamic_pointer_cast<AutumnCallableValue>(left_val);
   if (callableLeft != nullptr) {
-    left = callableLeft->call(*this, {});
+    left_val = callableLeft->call(interp, {});
   }
   std::shared_ptr<AutumnValue> ret = nullptr;
-  if (expr->op.type == TokenType::OR) {
-    if (isTruthy(left)) {
+  if (op.type == TokenType::OR) {
+    if (left_val->isTruthy()) {
       ret = std::dynamic_pointer_cast<AutumnValue>(
           std::make_shared<AutumnBool>(true));
       // std::cerr << "Returning from logical: " << ret->toString() <<
@@ -480,72 +249,60 @@ std::any Interpreter::visitLogicalExpr(std::shared_ptr<Logical> expr) {
       return ret;
     }
   } else {
-    if (!isTruthy(left)) {
+    if (!left_val->isTruthy()) {
       ret = std::dynamic_pointer_cast<AutumnValue>(
           std::make_shared<AutumnBool>(false));
-      // std::cerr << "Returning from logical: " << ret->toString() <<
-      // std::endl;
       return ret;
     }
   }
   try {
-    auto rightValue =
-        std::any_cast<std::shared_ptr<AutumnValue>>(expr->right->accept(*this));
+    auto right_val =
+        right->eval(interp);
     auto callableRight =
-        std::dynamic_pointer_cast<AutumnCallableValue>(rightValue);
+        std::dynamic_pointer_cast<AutumnCallableValue>(right_val);
     if (callableRight != nullptr) {
-      rightValue = callableRight->call(*this, {});
+      right_val = callableRight->call(interp, {});
     }
     return std::dynamic_pointer_cast<AutumnValue>(
-        std::make_shared<AutumnBool>(rightValue->isTruthy()));
+        std::make_shared<AutumnBool>(right_val->isTruthy()));
   } catch (const std::bad_any_cast &e) {
     // std::cerr << "Logical operator must be applied to a value" << std::endl;
     throw Error("Logical operator must be applied to a value" +
-                AstPrinter().print(expr->right));
+                right->prettyPrint());
   }
 }
 
 static std::shared_ptr<std::vector<std::shared_ptr<AutumnValue>>>
-getAllArgs(std::shared_ptr<Call> expr, Interpreter &interpreter) {
-  std::vector<std::shared_ptr<AutumnValue>> arguments;
-  int i = 0;
-  for (const auto &argument : expr->arguments) {
+getAllArgs(Call &expr, Interpreter &interpreter) {
+  auto vals = std::make_shared<std::vector<std::shared_ptr<AutumnValue>>>();
+  vals->reserve(expr.arguments.size());
+  for (const auto &argument : expr.arguments) {
     try {
-      arguments.push_back(std::any_cast<std::shared_ptr<AutumnValue>>(
-          argument->accept(interpreter)));
-    } catch (const std::bad_any_cast &e) {
-      throw Error("Call arguments must be values");
+      vals->push_back(argument->eval(interpreter));
     } catch (const Error &e) {
       throw Error("Call argument processing error while visiting: \n" +
-                  AstPrinter().print(expr) + "\n Got: \n" + e.what());
+                  expr.prettyPrint() + "\n Got: \n" + e.what());
     }
   }
-  return std::make_shared<std::vector<std::shared_ptr<AutumnValue>>>(arguments);
+  return vals;
 }
 
 
-std::any Interpreter::visitCallExpr(std::shared_ptr<Call> expr) {
-  AstPrinter printer;
-  std::any callee = expr->callee->accept(*this);
+std::shared_ptr<AutumnValue> Call::eval(Interpreter &interp) {
+  std::shared_ptr<AutumnValue> calleeVal =
+      callee->eval(interp);
 
-  try {
-    std::shared_ptr<AutumnType> tv =
-        std::any_cast<std::shared_ptr<AutumnType>>(callee);
-    if (tv != nullptr) {
-      // Check if this is a class
-      std::shared_ptr<AutumnClass> cls =
-          std::dynamic_pointer_cast<AutumnClass>(tv);
-      if (cls != nullptr) {
+  auto classVal = std::dynamic_pointer_cast<AutumnClassValue>(calleeVal);
+  if (classVal != nullptr) {
+      std::shared_ptr<AutumnClass> cls = classVal->getClass();
+      {
         if (cls->name == "Cell") {
-          std::shared_ptr<std::vector<std::string>> varExprs = std::make_shared<std::vector<std::string>>();
-          VariableCollector collector;
-          for (const auto &arg : expr->arguments) {
-            auto subVarExprs = std::any_cast<std::shared_ptr<std::vector<std::string>>>(arg->accept(collector));
-            varExprs->insert(varExprs->end(), subVarExprs->begin(), subVarExprs->end());
-          }
-          for (const auto &arg : expr->arguments) {
-            auto subVarExprs = std::any_cast<std::shared_ptr<std::vector<std::string>>>(arg->accept(collector));
-            varExprs->insert(varExprs->end(), subVarExprs->begin(), subVarExprs->end());
+          std::vector<Symbol> varExprs;
+          for (const auto &arg : arguments) {
+            auto subVarExprs = arg->collectVars();
+            for (const auto &v : subVarExprs) {
+              varExprs.push_back(interp.interner_.intern(v));
+            }
           }
           // std::cout << "VarExprs: " << varExprs->size() << std::endl;
           // for (const auto &varExpr : *varExprs) {
@@ -553,11 +310,11 @@ std::any Interpreter::visitCallExpr(std::shared_ptr<Call> expr) {
           // }
           std::vector<std::shared_ptr<AutumnValue>> cellArgs = {};
           // Create a closure
-          EnvironmentPtr subEnv = std::make_shared<Environment>();
+          EnvironmentPtr subEnv = std::make_shared<Environment>(interp.interner_);
           // Copy everthing we can except the nearest instance enclosing.
           EnvironmentPtr skippingEnv = nullptr;
           // Find the nearest instance enclosing
-          EnvironmentPtr currentEnv = environment;
+          EnvironmentPtr currentEnv = interp.environment;
 
           std::stack<EnvironmentPtr> envStack;
           while (currentEnv != nullptr) {
@@ -574,24 +331,24 @@ std::any Interpreter::visitCallExpr(std::shared_ptr<Call> expr) {
             }
             else {
                 // Copy everything over
-                subEnv->selectiveCopy(currentEnv, *varExprs);
+                subEnv->selectiveCopy(currentEnv, varExprs);
             }
           }
-          EnvironmentPtr currEnv = this->getEnvironment();
-          this->setEnvironment(subEnv);
+          EnvironmentPtr currEnv = interp.getEnvironment();
+          interp.setEnvironment(subEnv);
           // TODO: Separate out/ remove outer attribute that are not evaluated
-          for (const auto &arg : expr->arguments) {
+          for (const auto &arg : arguments) {
             std::shared_ptr<AutumnExprValue> exprValue =
                 std::make_shared<AutumnExprValue>(arg, subEnv);
             try {
-              
+
               std::shared_ptr<AutumnValue> pValue =
-                  std::any_cast<std::shared_ptr<AutumnValue>>(
-                      arg->accept(*this));
+
+                      arg->eval(interp);
               auto pNumber = std::dynamic_pointer_cast<AutumnNumber>(pValue);
               if (pNumber != nullptr) {
                 cellArgs.push_back(std::make_shared<AutumnExprValue>(
-                    std::make_shared<Literal>(pNumber->getNumber()), subEnv));
+                    std::make_shared<IntLiteral>(pNumber->getNumber()), subEnv));
                 continue;
               }
               cellArgs.push_back(exprValue);
@@ -599,17 +356,17 @@ std::any Interpreter::visitCallExpr(std::shared_ptr<Call> expr) {
               cellArgs.push_back(exprValue);
             }
           }
-          this->setEnvironment(currEnv);
+          interp.setEnvironment(currEnv);
           return std::dynamic_pointer_cast<AutumnValue>(
               std::make_shared<AutumnInstance>(cls, cellArgs));
         }
         // First get all the argument
-        auto arguments = getAllArgs(expr, *this);
+        auto arguments = getAllArgs(*this, interp);
         try {
           std::vector<std::shared_ptr<AutumnValue>> args = *arguments;
           if (cls->getInitializer() != nullptr) {
             std::shared_ptr<AutumnValue> pValue =
-                cls->getInitializer()->call(*this, *arguments);
+                cls->getInitializer()->call(interp, *arguments);
             std::shared_ptr<AutumnList> list =
                 std::dynamic_pointer_cast<AutumnList>(pValue);
             if (list != nullptr) {
@@ -627,37 +384,27 @@ std::any Interpreter::visitCallExpr(std::shared_ptr<Call> expr) {
               e.what());
         }
       }
-    }
-  } catch (const std::bad_any_cast &) {
-  }
-  std::shared_ptr<AutumnValue> calleeVal = nullptr;
-  try {
-    calleeVal = std::any_cast<std::shared_ptr<AutumnValue>>(callee);
-    calleeVal = calleeVal->copy();
-  } catch (const std::bad_any_cast &e) {
-    throw Error(
-        "Callee:: Can only call functions and classes or evaluate expresions");
   }
   try {
     std::shared_ptr<AutumnExprValue> exprValue =
         std::dynamic_pointer_cast<AutumnExprValue>(calleeVal);
     if (exprValue != nullptr) {
-      // Print out this and the enclosing environment environment type
-      std::string thisEnvType = this->getEnvironment()->getEnvironmentType() == EnvironmentType::INSTANCE ? "Instance" : "Global";
-      std::string enclosingEnvType = this->getEnvironment()->getEnclosing() == nullptr ? "Global" : this->getEnvironment()->getEnclosing()->getEnvironmentType() == EnvironmentType::INSTANCE ? "Instance" : "Global";
+      // Print out this and the enclosing interp.environment interp.environment type
+      std::string thisEnvType = interp.getEnvironment()->getEnvironmentType() == EnvironmentType::INSTANCE ? "Instance" : "Global";
+      std::string enclosingEnvType = interp.getEnvironment()->getEnclosing() == nullptr ? "Global" : interp.getEnvironment()->getEnclosing()->getEnvironmentType() == EnvironmentType::INSTANCE ? "Instance" : "Global";
       EnvironmentPtr subEnv = exprValue->getCenv();
-      EnvironmentPtr currEnv = this->getEnvironment();
+      EnvironmentPtr currEnv = interp.getEnvironment();
       subEnv->setEnclosing(currEnv);
-      this->setEnvironment(subEnv);
-      auto val = exprValue->getExpr()->accept(*this);
+      interp.setEnvironment(subEnv);
+      auto val = exprValue->getExpr()->eval(interp);
       subEnv->setEnclosing(nullptr);
-      this->setEnvironment(currEnv);
+      interp.setEnvironment(currEnv);
       return val;
     }
   } catch (Error &e) {
     std::shared_ptr<AutumnExprValue> exprValue =
         std::dynamic_pointer_cast<AutumnExprValue>(calleeVal);
-    throw Error(std::string("Error in visiting evaluation of expression: ") + AstPrinter().print(exprValue->getExpr()) + "\n" +
+    throw Error(std::string("Error in visiting evaluation of expression: ") + exprValue->getExpr()->prettyPrint() + "\n" +
                 e.what());
   }
   std::shared_ptr<AutumnCallableValue> callable =
@@ -667,79 +414,79 @@ std::any Interpreter::visitCallExpr(std::shared_ptr<Call> expr) {
   }
   if (callable->toString() == "<native fn: Prev>" || callable->toString() == "<native fn: <native fn: Prev>>") {
     // Do not evaluate the arguments
-    if (expr->arguments.size() != 1) {
+    if (arguments.size() != 1) {
       throw Error("[Prev] Prev() takes 1 argument");
     }
-    std::shared_ptr<Variable> varExpr = std::dynamic_pointer_cast<Variable>(expr->arguments[0]);
+    std::shared_ptr<Variable> varExpr = std::dynamic_pointer_cast<Variable>(arguments[0]);
     if (varExpr == nullptr) { // This is already a string
       std::shared_ptr<AutumnValue> retVal =
-        std::any_cast<std::shared_ptr<AutumnValue>>(
-            callable->call(*this, *getAllArgs(expr, *this)));
+
+            callable->call(interp, *getAllArgs(*this, interp));
       return retVal;
     }
     std::shared_ptr<AutumnValue> varName = std::make_shared<AutumnString>(varExpr->name.lexeme);
     std::shared_ptr<AutumnValue> retVal =
-        std::any_cast<std::shared_ptr<AutumnValue>>(
-            callable->call(*this, {varName}));
+
+            callable->call(interp, {varName});
     return retVal;
   }
   else {
     std::shared_ptr<AutumnValue> retVal =
-        std::any_cast<std::shared_ptr<AutumnValue>>(
-            callable->call(*this, *getAllArgs(expr, *this)));
+
+            callable->call(interp, *getAllArgs(*this, interp));
     return retVal;
   }
 }
 
-std::any Interpreter::visitGetExpr(std::shared_ptr<Get> expr) {
-  // std::cerr << "Visiting get: " << expr->name.lexeme << std::endl;
-  std::shared_ptr<AutumnValue> object =
-      std::any_cast<std::shared_ptr<AutumnValue>>(expr->object->accept(*this));
-  if (object == nullptr) {
-    throw Error("Error interpreting: " + AstPrinter().print(expr) +
+std::shared_ptr<AutumnValue> Get::eval(Interpreter &interp) {
+  // std::cerr << "Visiting get: " << name.lexeme << std::endl;
+  std::shared_ptr<AutumnValue> object_val =
+      object->eval(interp);
+  if (object_val == nullptr) {
+    throw Error("Error interpreting: " + prettyPrint() +
                 ": Cannot get property from null");
   }
   std::shared_ptr<AutumnInstance> instance =
-      std::dynamic_pointer_cast<AutumnInstance>(object);
+      std::dynamic_pointer_cast<AutumnInstance>(object_val);
   if (instance == nullptr) {
-    throw Error("Error interpreting: " + AstPrinter().print(expr) +
+    throw Error("Error interpreting: " + prettyPrint() +
                 "Only instances have properties, instead got " +
-                object->getType()->toString());
+                object_val->getType()->toString());
   }
-  std::shared_ptr<AutumnValue> value = instance->get(expr->name.lexeme);
+  std::shared_ptr<AutumnValue> value =
+      AutumnInstance::getWithMethod(instance, name.lexeme);
   if (value == nullptr) {
-    throw Error("Error interpreting: " + AstPrinter().print(expr) +
-                "Undefined property '" + expr->name.lexeme + "'");
+    throw Error("Error interpreting: " + prettyPrint() +
+                "Undefined property '" + name.lexeme + "'");
   }
   // std::cerr << "Returning from get: " << value->toString() << std::endl;
   return value;
 }
 
-std::any Interpreter::visitSetExpr(std::shared_ptr<Set> expr) {
-  std::shared_ptr<AutumnValue> object =
-      std::any_cast<std::shared_ptr<AutumnValue>>(expr->object->accept(*this));
-  if (object == nullptr) {
+std::shared_ptr<AutumnValue> Set::eval(Interpreter &interp) {
+  std::shared_ptr<AutumnValue> object_val =
+      object->eval(interp);
+  if (object_val == nullptr) {
     throw Error("Cannot set property on null");
   }
   std::shared_ptr<AutumnInstance> instance =
-      std::dynamic_pointer_cast<AutumnInstance>(object);
+      std::dynamic_pointer_cast<AutumnInstance>(object_val);
   if (instance == nullptr) {
     throw Error("Only instances have fields");
   }
-  std::shared_ptr<AutumnValue> value =
-      std::any_cast<std::shared_ptr<AutumnValue>>(expr->value->accept(*this));
-  instance->set(expr->name.lexeme, value);
-  return value;
+  std::shared_ptr<AutumnValue> value_val =
+      value->eval(interp);
+  instance->set(name.lexeme, value_val);
+  return value_val;
 }
 
-std::any Interpreter::visitLambdaExpr(std::shared_ptr<Lambda> expr) {
-  AstPrinter printer;
+std::shared_ptr<AutumnValue> Lambda::eval(Interpreter &interp) {
   // std::cerr << "Visiting lambda: "
-  //           << std::any_cast<std::string>(expr->accept(printer)) <<
+  //           << std::get<std::string>(accept(printer)) <<
   //           std::endl;
-  std::shared_ptr<Environment> closure = environment; /// TODO: Fix if bug
+  std::shared_ptr<Environment> closure = interp.environment; /// TODO: Fix if bug
   std::shared_ptr<AutumnLambda> lambda =
-      std::make_shared<AutumnLambda>(expr, closure);
+      std::make_shared<AutumnLambda>(*this, closure);
   if (lambda == nullptr) {
     throw Error("visitingLambdaExpr:: Error creating lambda");
   }
@@ -754,171 +501,161 @@ std::any Interpreter::visitLambdaExpr(std::shared_ptr<Lambda> expr) {
   }
 }
 
-std::any
-Interpreter::visitTypeVariableExpr(std::shared_ptr<TypeVariable> expr) {
-  return environment->getTypeValue(expr->name);
+std::shared_ptr<AutumnValue> TypeVariable::eval(Interpreter &interp) {
+  // TypeVariable is handled by resolveTypeExpr in type declaration contexts.
+  // If called directly as a value, try to find a class constructor.
+  auto type = interp.environment->getTypeValue(nameId);
+  if (type != nullptr) {
+    auto cls = std::dynamic_pointer_cast<AutumnClass>(type);
+    if (cls) return std::make_shared<AutumnClassValue>(cls);
+  }
+  throw Error("Type '" + name.lexeme + "' cannot be used as a value");
 }
 
-std::any Interpreter::visitTypeDeclExpr(std::shared_ptr<TypeDecl> expr) {
-  std::shared_ptr<AutumnType> type = nullptr;
-  try {
-    type = std::any_cast<std::shared_ptr<AutumnType>>(
-        expr->typeexpr->accept(*this));
-  } catch (const std::bad_any_cast &e) {
-    throw Error("TypeDecl must have a type" +
-                AstPrinter().print(expr->typeexpr));
-  }
-  if (stateStack.size() != 0 && stateStack.top() == InterpretingState::OBJECT) {
-    return std::make_pair<>(expr->name.lexeme, type);
-
-  } else {
-    // std::cerr << "TypeDecl " << expr->name.lexeme << " " << type->toString()
-    //           << std::endl;
-    environment->assignType(expr->name.lexeme, type);
-    return nullptr;
-  }
+// Default: evaluate and extract either an AutumnClassValue's class or the
+// value's runtime type. Specialized for ListTypeExpr and TypeVariable.
+std::shared_ptr<AutumnType> Expr::resolveTypeExpr(Interpreter &interp) {
+  return eval(interp)->getType();
 }
 
-std::any
-Interpreter::visitListTypeExprExpr(std::shared_ptr<ListTypeExpr> expr) {
-  try {
-    std::shared_ptr<AutumnType> ntype =
-        std::any_cast<std::shared_ptr<AutumnType>>(
-            expr->typeexpr->accept(*this));
-    if (ntype == nullptr) {
-      throw Error("List type must have a type, instead got" + AstPrinter().print(expr));
-    }
-    return std::shared_ptr<AutumnType>(AutumnListType::getInstance(ntype));
-  } catch (const std::bad_any_cast &e) {
-    throw Error("List type must have a type" + AstPrinter().print(expr));
-  }
+std::shared_ptr<AutumnType> ListTypeExpr::resolveTypeExpr(Interpreter &interp) {
+  auto innerType = typeexpr->resolveTypeExpr(interp);
+  return AutumnListType::getInstance(innerType);
 }
 
-std::any Interpreter::visitListVarExprExpr(std::shared_ptr<ListVarExpr> expr) {
+std::shared_ptr<AutumnType> TypeVariable::resolveTypeExpr(Interpreter &interp) {
+  auto type = interp.getEnvironment()->getTypeValue(name);
+  if (type) return type;
+  throw Error("Undefined type '" + name.lexeme + "'");
+}
+
+std::shared_ptr<AutumnValue> TypeDecl::eval(Interpreter &interp) {
+  auto type = typeexpr->resolveTypeExpr(interp);
+  interp.environment->assignType(nameId, type);
+  return nullptr;
+}
+
+std::pair<std::string, std::shared_ptr<AutumnType>> TypeDecl::evalAsFieldDecl(Interpreter &interp) {
+  auto type = typeexpr->resolveTypeExpr(interp);
+  return std::make_pair(name.lexeme, type);
+}
+
+std::shared_ptr<AutumnValue> ListTypeExpr::eval(Interpreter &interp) {
+  throw Error("ListTypeExpr cannot be evaluated as a value");
+}
+
+std::shared_ptr<AutumnValue> ListVarExpr::eval(Interpreter &interp) {
   try {
     auto pVarExprs =
         std::make_shared<std::vector<std::shared_ptr<AutumnValue>>>();
-    for (auto subexpr : expr->varExprs) {
+    for (auto subexpr : varExprs) {
       try {
-        auto valueAny = subexpr->accept(*this);
+        auto valueAny = subexpr->eval(interp);
         auto autumnValue =
-            std::any_cast<std::shared_ptr<AutumnValue>>(valueAny);
+            valueAny;
         pVarExprs->push_back(autumnValue);
       } catch (const std::bad_any_cast &e) {
         throw Error("visitListVarExprExpr Failed To Interpret " +
-                    AstPrinter().print(subexpr));
+                    subexpr->prettyPrint());
       }
     }
     auto plist = std::make_shared<AutumnList>(pVarExprs);
     return std::dynamic_pointer_cast<AutumnValue>(plist);
   } catch (const std::bad_any_cast &e) {
-    throw Error("List must have values,got " + AstPrinter().print(expr));
+    throw Error("List must have values,got " + prettyPrint());
   }
 }
 
-std::any Interpreter::visitIfExprExpr(std::shared_ptr<IfExpr> expr) {
-  std::shared_ptr<AutumnValue> condition = nullptr;
-  try {
-    condition =
-        std::any_cast<std::shared_ptr<AutumnValue>>(
-            expr->condition->accept(*this));
-    
-  } catch (const std::bad_any_cast &e) {
-    throw Error("If condition must be a boolean expression: " +
-                AstPrinter().print(expr->condition) + " - " + e.what());
-  }
+std::shared_ptr<AutumnValue> IfExpr::eval(Interpreter &interp) {
+  std::shared_ptr<AutumnValue> condVal = this->condition->eval(interp);
   bool isCondTruthy = false;
   try {
-    isCondTruthy = condition->isTruthy();
+    isCondTruthy = condVal->isTruthy();
   } catch (const Error &e) {
     throw Error("If condition must be a boolean expression, instead got value: " +
-                condition->toString() + " - " + e.what());
+                condVal->toString() + " - " + e.what());
   }
   if (isCondTruthy) {
     try {
-      return expr->thenBranch->accept(*this);
+      return thenBranch->eval(interp);
     } catch (const Error &e) {
-      throw Error("If then branch error: " + AstPrinter().print(expr->thenBranch) +
+      throw Error("If then branch error: " + thenBranch->prettyPrint() +
       " - " + std::string(e.what()));
     }
   } else {
     try {
-      return expr->elseBranch->accept(*this);
+      return elseBranch->eval(interp);
     } catch (const Error &e) {
-      throw Error("If else branch error: " + AstPrinter().print(expr->elseBranch) +
+      throw Error("If else branch error: " + elseBranch->prettyPrint() +
       " - " + std::string(e.what()));
     }
   }
 }
 
-std::any Interpreter::visitLetExpr(std::shared_ptr<Let> expr) {
-  auto subEnv = std::make_shared<Environment>(environment);
-  setEnvironment(subEnv);
+std::shared_ptr<AutumnValue> Let::eval(Interpreter &interp) {
+  auto subEnv = std::make_shared<Environment>(interp.environment);
+  interp.setEnvironment(subEnv);
   std::shared_ptr<AutumnValue> value = nullptr;
-  std::any ret;
-  for (const auto &subexpr : expr->exprs) {
-    ret = subexpr->accept(*this);
+  std::shared_ptr<AutumnValue> ret;
+  for (const auto &subexpr : exprs) {
+    ret = subexpr->eval(interp);
   }
   try {
-    value = std::any_cast<std::shared_ptr<AutumnValue>>(ret);
+    value = ret;
   } catch (const std::bad_any_cast &e) {
-    throw Error("Error visiting Let Expr- " + AstPrinter().print(expr) +
+    throw Error("Error visiting Let Expr- " + prettyPrint() +
           "\nGot:" + e.what());
   }
-  setEnvironment(subEnv->getEnclosing());
+  interp.setEnvironment(subEnv->getEnclosing());
   return value;
 }
 
-std::any Interpreter::visitInitNextExpr(std::shared_ptr<InitNext> expr) {
+std::shared_ptr<AutumnValue> InitNext::eval(Interpreter &interp) {
   return nullptr;
 }
 
-std::any Interpreter::visitObjectStmt(std::shared_ptr<Object> stmt) {
-  stateStack.push(InterpretingState::OBJECT);
-  // std::cerr << "Visiting object stmt " << AstPrinter().print(stmt) <<
-  // std::endl;
-  std::vector<std::pair<std::string, std::shared_ptr<AutumnType>>> fields;
-  for (const auto &field : stmt->fields) {
-    fields.push_back(
-        std::any_cast<std::pair<std::string, std::shared_ptr<AutumnType>>>(
-            field->accept(*this)));
+void Object::exec(Interpreter &interp) {
+  interp.stateStack.push(Interpreter::OBJECT);
+  std::vector<std::pair<std::string, std::shared_ptr<AutumnType>>> fieldDecls;
+  for (const auto &field : this->fields) {
+    auto typeDecl = std::dynamic_pointer_cast<TypeDecl>(field);
+    if (typeDecl) {
+      fieldDecls.push_back(typeDecl->evalAsFieldDecl(interp));
+    }
   }
-  environment->defineType(
-      stmt->name.lexeme,
-      makeObjectClass(*this, stmt->name.lexeme, fields, stmt->Cell));
-  stateStack.pop();
-  // std::cerr << "Defined object " << stmt->name.lexeme << " with type "
-  //           << std::any_cast<std::shared_ptr<AutumnType>>(
-  //                  environment->getTypeValue(stmt->name))
+  auto clsType = makeObjectClass(interp, name.lexeme, fieldDecls, Cell);
+  interp.environment->defineType(nameId, clsType);
+  interp.stateStack.pop();
+  // std::cerr << "Defined object " << name.lexeme << " with type "
+  //           << std::get<std::shared_ptr<AutumnType>>(
+  //                  interp.environment->getTypeValue(name))
   //                  ->toString()
   //           << std::endl;
-  return nullptr;
 }
 
-std::any Interpreter::visitBlockStmt(std::shared_ptr<Block> stmt) {
+void Block::exec(Interpreter &interp) {
   throw Error("Block statement is not allowed in this language");
 }
 
-std::any Interpreter::visitExpressionStmt(std::shared_ptr<Expression> stmt) {
-  std::any value = stmt->expression->accept(*this);
-  return nullptr;
+void Expression::exec(Interpreter &interp) {
+  expression->eval(interp);
 }
 
-std::any Interpreter::visitOnStmtStmt(std::shared_ptr<OnStmt> stmt) {
-  onStmts.push_back(stmt);
-  return nullptr;
+void OnStmt::exec(Interpreter &interp) {
+  interp.onStmts.push_back(std::make_shared<OnStmt>(condition, expr));
 }
 
 void Interpreter::start(const std::vector<std::shared_ptr<Stmt>> &stmts,
-                        std::string stdlib, std::string triggeringCondition, 
+                        std::string stdlib, std::string triggeringCondition,
                         uint64_t randomSeed) {
+  auto &interp = *this;
   setRandomSeed(randomSeed);
   init(stdlib);
   environment->assign("SpecialConditionTriggered",
                   std::make_shared<AutumnBool>(false));
   if (triggeringCondition != "") {
     try {
-      SExpParser parser(triggeringCondition);
+      SExpParser parser(triggeringCondition, interner_);
       std::shared_ptr<Expr> expr =
           parser.parseExpr(sexpresso::parse(triggeringCondition));
       this->triggeringConditionExpr = expr;
@@ -928,30 +665,28 @@ void Interpreter::start(const std::vector<std::shared_ptr<Stmt>> &stmts,
     }
   }
   for (const auto &stmt : stmts) {
-    stmt->accept(*this);
+    stmt->exec(interp);
   }
 
-  // Then start visiting initExpr
-  for (const auto &[k, v] : initMap) {
+  // Evaluate init expressions in declaration order.
+  for (const auto &var : initNextVars) {
+    if (var.initExpr == nullptr) continue;
     try {
-      std::shared_ptr<AutumnValue> value =
-          std::any_cast<std::shared_ptr<AutumnValue>>(v->accept(*this));
-      std::string name = k;
+      std::shared_ptr<AutumnValue> value = var.initExpr->eval(interp);
+      const std::string &name = *var.name;
       if (value == nullptr) {
         throw Error("Inititalizing: " + name + ": " +
                     "must have a value instead got null ptr");
       }
-      // Fetch the corresponding type
       if (getVerbose()) {
         std::cerr << "Init " << name << ": " << std::endl
-                << value->toString() << std::endl;
-        // flush stderr
-        std::cerr << std::endl;
+                  << value->toString() << std::endl
+                  << std::endl;
       }
-      std::shared_ptr<AutumnType> type = environment->getAssignedType(name);
-      environment->define(name, value);
+      std::shared_ptr<AutumnType> type = environment->getAssignedType(var.name);
+      environment->define(var.name, value);
     } catch (const std::bad_any_cast &e) {
-      throw Error("Init must have a value: " + AstPrinter().print(v));
+      throw Error("Init must have a value: " + var.initExpr->prettyPrint());
     } catch (const RuntimeError &e) {
       if (getVerbose()) {
         std::cerr << "Warning:: Exception " << e.token.lexeme << std::endl;
@@ -965,6 +700,7 @@ void Interpreter::start(const std::vector<std::shared_ptr<Stmt>> &stmts,
 }
 
 void Interpreter::tmpExecuteStmt(const std::shared_ptr<Stmt> &stmt) {
+  auto &interp = *this;
   try {
     cacheEnvironment(environment);
     std::shared_ptr<Expression> exprStmt = std::dynamic_pointer_cast<Expression>(stmt);
@@ -973,11 +709,11 @@ void Interpreter::tmpExecuteStmt(const std::shared_ptr<Stmt> &stmt) {
     std::shared_ptr<Assign> assign = std::dynamic_pointer_cast<Assign>(exprStmt->expression);
     if (assign != nullptr) {
       // visit this
-      visitAssignExpr(assign);
+      assign->eval(interp);
       std::shared_ptr<InitNext> initNext = std::dynamic_pointer_cast<InitNext>(assign->value);
       if (initNext != nullptr) {
-        environment->define(assign->name.lexeme, 
-        std::any_cast<std::shared_ptr<AutumnValue>>(initNext->initializer->accept(*this)));
+        environment->define(assign->name.lexeme,
+        initNext->initializer->eval(interp));
       }
       return;
     }
@@ -986,19 +722,20 @@ void Interpreter::tmpExecuteStmt(const std::shared_ptr<Stmt> &stmt) {
       return;
     }
     else{
-    stmt->accept(*this);
-    } 
+    stmt->exec(interp);
+    }
   }catch (const Error &e) {
     throw Error("Error in tmpExecuteStmt: " + std::string(e.what()));
   }
 }
 
 void Interpreter::step() {
+  auto &interp = *this;
   // Copy previous globals
   // Delete previous environment
   auto old_prev_environment = prev_environment;
   if (prev_environment == nullptr) {
-    prev_environment = std::make_shared<Environment>();
+    prev_environment = std::make_shared<Environment>(interner_);
   }
   // Copy the stack
   std::stack<std::shared_ptr<Environment>> stack;
@@ -1020,8 +757,8 @@ void Interpreter::step() {
   // Execute triggeringCondition
   if (this->triggeringConditionExpr != nullptr) {
     std::shared_ptr<AutumnValue> condition =
-        std::any_cast<std::shared_ptr<AutumnValue>>(
-            this->triggeringConditionExpr->accept(*this));
+
+            this->triggeringConditionExpr->eval(interp);
     if (!condition->isTruthy()) {
       environment->assign("SpecialConditionTriggered",
                       std::make_shared<AutumnBool>(false));
@@ -1032,14 +769,14 @@ void Interpreter::step() {
   }
   // Execute onStmts
   std::vector<std::shared_ptr<std::string>> updated;
-  AstPrinter printer;
   for (int i = 0; i < onStmts.size(); i++) {
     auto stmt = onStmts[i];
     std::shared_ptr<AutumnValue> condition = nullptr;
     std::shared_ptr<OnStmt> onStmt = std::dynamic_pointer_cast<OnStmt>(stmt);
     try {
-      condition = std::any_cast<std::shared_ptr<AutumnValue>>(
-          onStmt->condition->accept(*this));
+      condition =
+          onStmt->condition->eval(interp);
+      std::cerr << "On condition: " << condition->toString() << std::endl;
     } catch (const std::bad_any_cast &e) {
       throw Error("On condition must be a value");
     }
@@ -1061,25 +798,19 @@ void Interpreter::step() {
     if (condEval->isTruthy()) {
       onClauseCovered.insert(i);
       std::shared_ptr<AutumnValue> value =
-          std::any_cast<std::shared_ptr<AutumnValue>>(
-              onStmt->expr->accept(*this));
+
+              onStmt->expr->eval(interp);
     }
   }
-  for (auto kvPairs : nextMap) {
-    std::string key = kvPairs.first;
-    std::shared_ptr<Expr> nextExpr = kvPairs.second;
-    if (environment->isUpdated(key)) {
-      continue;
-    }
-    auto allDefineds = environment->getDefinedVariables();
-    if (allDefineds.find(key) == allDefineds.end()) {
-      continue;
-    }
-    std::shared_ptr<AutumnValue> value =
-        std::any_cast<std::shared_ptr<AutumnValue>>(nextExpr->accept(*this));
-    environment->assign(key, value);
+  for (const auto &var : initNextVars) {
+    if (var.nextExpr == nullptr) continue;
+    if (environment->isUpdated(var.name)) continue;
+    auto &allDefineds = environment->getDefinedVariables();
+    if (allDefineds.find(var.name) == allDefineds.end()) continue;
+    std::shared_ptr<AutumnValue> value = var.nextExpr->eval(interp);
+    environment->assign(var.name, value);
   }
-  this->state->reset();
+  state.reset();
 }
 
 static std::shared_ptr<AutumnList>
@@ -1104,7 +835,7 @@ renderValue(Interpreter &interpreter, std::shared_ptr<AutumnValue> value) {
     }
     std::shared_ptr<AutumnCallableValue> render =
         std::dynamic_pointer_cast<AutumnCallableValue>(
-            pInstance->get("render"));
+            AutumnInstance::getWithMethod(pInstance, "render"));
     std::shared_ptr<AutumnValue> result = render->call(interpreter, {});
     return std::dynamic_pointer_cast<AutumnList>(result);
   } else {
@@ -1120,15 +851,14 @@ std::string Interpreter::renderAll() {
   result.reserve(10000);
   auto allDefineds = environment->getDefinedVariables();
   auto vars = environment->getDefinitionOrder();
-  auto visited = std::unordered_set<std::string>();
-  visited.reserve(initOrder.size() + vars.size());
-  // copy vars to initOrder
-  auto renderOrder = std::vector<std::string>();
-  renderOrder.reserve(initOrder.size() + vars.size());
-  for (auto &elem : initOrder) {
-    if (visited.find(elem) == visited.end()) {
-      renderOrder.push_back(elem);
-      visited.insert(elem);
+  auto visited = std::unordered_set<Symbol>();
+  visited.reserve(initNextVars.size() + vars.size());
+  auto renderOrder = std::vector<Symbol>();
+  renderOrder.reserve(initNextVars.size() + vars.size());
+  for (const auto &var : initNextVars) {
+    if (visited.find(var.name) == visited.end()) {
+      renderOrder.push_back(var.name);
+      visited.insert(var.name);
     }
   }
   for (auto &elem : vars) {
@@ -1140,7 +870,7 @@ std::string Interpreter::renderAll() {
   auto pAllElems = std::make_shared<AutumnList>();
   pAllElems->getValues()->reserve(10000);
   static constexpr const char* ELEMENTS_TEMPLATE = "\"%s\": [";
-  static constexpr const char* POSITION_TEMPLATE = 
+  static constexpr const char* POSITION_TEMPLATE =
     "{\"position\": {\"x\": %d, \"y\": %d}, \"color\": %s}, ";
   for (auto k : renderOrder) {
     auto pList = renderValue(*this, allDefineds[k]);
@@ -1148,7 +878,7 @@ std::string Interpreter::renderAll() {
       continue;
     }
     char buffer[256];
-    snprintf(buffer, sizeof(buffer), ELEMENTS_TEMPLATE, k.c_str());
+    snprintf(buffer, sizeof(buffer), ELEMENTS_TEMPLATE, k->c_str());
     result += buffer;
     for (auto &elem : *(pList->getValues())) {
       auto elemInstance = std::dynamic_pointer_cast<AutumnInstance>(elem);
@@ -1164,7 +894,7 @@ std::string Interpreter::renderAll() {
           std::dynamic_pointer_cast<AutumnString>(elemInstance->get("color"))
               ->getString();
       char buffer[256];
-      snprintf(buffer, sizeof(buffer), POSITION_TEMPLATE, 
+      snprintf(buffer, sizeof(buffer), POSITION_TEMPLATE,
               x, y, color.c_str());
       result += buffer;
     }
@@ -1200,9 +930,10 @@ int Interpreter::getFrameRate() {
 
 
 std::string Interpreter::evaluateToString(std::string expr) {
-  SExpParser parser(expr);
+  auto &interp = *this;
+  SExpParser parser(expr, interner_);
   auto parsedExpr = parser.parseExpr(sexpresso::parse(expr));
-  auto result = std::any_cast<std::shared_ptr<AutumnValue>>(parsedExpr->accept(*this));
+  auto result = parsedExpr->eval(interp);
   if (result == nullptr) {
     return "NULL";
   }

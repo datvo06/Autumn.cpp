@@ -23,8 +23,7 @@ Defined::call(Interpreter &Interpreter,
     if (varName[0] == '\"') {
       varName = varName.substr(1, varName.size() - 2);
     }
-    auto defineds = Interpreter.getGlobals()->getDefinedVariables();
-    if (defineds.find(varName) != defineds.end()) {
+    if (Interpreter.getGlobals()->isDefined(varName)) {
       return std::make_shared<AutumnBool>(true);
     }
     return std::make_shared<AutumnBool>(false);

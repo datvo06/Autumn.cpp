@@ -1,0 +1,79 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+jobs:
+  build_wheels:
+    name: Build wheels on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-26-intel, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v3.4.1
+        with:
+          output-dir: wheelhouse
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: autumn-cpp-wheels-${{ matrix.os }}
+          path: ./wheelhouse/*.whl
+
+  build_wasm:
+    name: Build wasm interpreter
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: emscripten-core/setup-emsdk@v15
+
+      - name: Build Autumn.wasm
+        run: |
+          emcmake cmake -S . -B build-wasm -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-wasm -j
+
+      - name: Stage artifacts
+        run: |
+          mkdir autumn.wasm
+          cp build-wasm/interpreter_web.js \
+             build-wasm/interpreter_web.wasm \
+             autumnstdlib/stdlib.sexp \
+             autumn.wasm/
+          tar cJf autumn.wasm.tar.xz autumn.wasm
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: autumn-wasm-tarball
+          path: autumn.wasm.tar.xz
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: [build_wheels, build_wasm]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/*.whl
+            artifacts/autumn.wasm.tar.xz

@@ -2,73 +2,68 @@
 #include "Error.hpp"
 #include <memory>
 
-Autumn::Environment::Environment() : enclosing(nullptr), environmentType(EnvironmentType::GLOBAL) {}
+Autumn::Environment::Environment(Interner &interner)
+    : environmentType(EnvironmentType::GLOBAL), interner_(&interner),
+      enclosing(nullptr) {}
 
-Autumn::Environment::Environment(EnvironmentPtr enclosingEnv, EnvironmentType environmentType)
-    : enclosing(enclosingEnv), environmentType(environmentType) {}
+Autumn::Environment::Environment(EnvironmentPtr enclosingEnv,
+                                 EnvironmentType environmentType)
+    : environmentType(environmentType),
+      interner_(enclosingEnv ? enclosingEnv->interner_ : nullptr),
+      enclosing(enclosingEnv) {}
 
-Autumn::EnvironmentPtr Autumn::Environment::ancestor(int distance) {
-  EnvironmentPtr environment = shared_from_this();
+Autumn::Environment *Autumn::Environment::ancestor(int distance) {
+  Environment *env = this;
   for (int i = 0; i < distance; i++) {
-    environment = environment->enclosing;
+    env = env->enclosing.get();
   }
-  return environment;
+  return env;
 }
 
-void Autumn::Environment::define(std::string name,
+void Autumn::Environment::define(Symbol name,
                                  std::shared_ptr<AutumnValue> value) {
   values[name] = value;
   definitionOrder.push_back(name);
   updateStates[name] = false;
 }
 
-void Autumn::Environment::defineType(std::string name,
+void Autumn::Environment::defineType(Symbol name,
                                      std::shared_ptr<AutumnType> value) {
   typeValues[name] = value;
 }
 
 std::shared_ptr<Autumn::AutumnValue>
 Autumn::Environment::getAt(int distance, const std::string &name) {
-  return ancestor(distance)->values[name];
+  return ancestor(distance)->values[interner_->intern(name)];
 }
 
 void Autumn::Environment::assignAt(
     int distance, const Token &name,
     const std::shared_ptr<Autumn::AutumnValue> &value) {
-  ancestor(distance)->values[name.lexeme] = value;
-  updateStates[name.lexeme] = true;
+  Symbol sym = interner_->intern(name.lexeme);
+  ancestor(distance)->values[sym] = value;
+  updateStates[sym] = true;
 }
 
 std::shared_ptr<Autumn::AutumnValue>
-Autumn::Environment::get(const Token &name) {
-  if (values.find(name.lexeme) != values.end()) {
-    return values[name.lexeme];
+Autumn::Environment::get(Symbol name) {
+  if (auto it = values.find(name); it != values.end()) {
+    return it->second;
   }
 
   if (enclosing != nullptr) {
     return enclosing->get(name);
   }
 
-  throw Error(std::string("Undefined variable '" + name.lexeme + "'. Defined arguments are: ") + this->printAllDefinedVariablesCrossStack());
-}
-
-std::shared_ptr<Autumn::AutumnValue>
-Autumn::Environment::get(const std::string &name) {
-  if (values.find(name) != values.end()) {
-    return values[name];
-  }
-
-  if (enclosing != nullptr) {
-    return enclosing->get(name);
-  }
-
-  throw Error(std::string("Undefined variable '" + name + "'. Defined arguments are: ") + this->printAllDefinedVariablesCrossStack());
+  throw Error(std::string("Undefined variable '" + *name +
+                          "'. Defined arguments are: ") +
+              this->printAllDefinedVariablesCrossStack());
 }
 
 std::shared_ptr<Autumn::AutumnType>
-Autumn::Environment::getTypeValue(const Token &name) {
-  if (typeValues.find(name.lexeme) != typeValues.end()) {
-    return typeValues[name.lexeme];
+Autumn::Environment::getTypeValue(Symbol name) {
+  if (auto it = typeValues.find(name); it != typeValues.end()) {
+    return it->second;
   }
 
   if (enclosing != nullptr) {
@@ -78,25 +73,20 @@ Autumn::Environment::getTypeValue(const Token &name) {
   return nullptr;
 }
 
-void Autumn::Environment::assign(const Token &name,
+void Autumn::Environment::assign(Symbol name,
                                  const std::shared_ptr<AutumnValue> &value) {
-  return assign(name.lexeme, value);
-}
-
-void Autumn::Environment::assign(const std::string &name,
-                                 const std::shared_ptr<AutumnValue> &value) {
-  if (values.find(name) != values.end()) {
-    auto oldType = values[name]->getType();
+  if (auto it = values.find(name); it != values.end()) {
+    auto oldType = it->second->getType();
     auto newType = value->getType();
     if (oldType->toString() != newType->toString() &&
         std::dynamic_pointer_cast<AutumnList>(value) == nullptr) {
       throw Error(std::string("Cannot assign value of type '") +
                   newType->toString() + "' to variable of type '" +
-                  oldType->toString() + "' for variable '" + name + "'.");
+                  oldType->toString() + "' for variable '" + *name + "'.");
     }
-    int oldInstId = values[name]->getInstId();
-    values[name] = value;
-    values[name]->setInstId(oldInstId);
+    int oldInstId = it->second->getInstId();
+    it->second = value;
+    it->second->setInstId(oldInstId);
     updateStates[name] = true;
     return;
   } else {
@@ -112,7 +102,7 @@ void Autumn::Environment::assign(const std::string &name,
   }
 }
 
-void Autumn::Environment::assignType(std::string name,
+void Autumn::Environment::assignType(Symbol name,
                                      const std::shared_ptr<AutumnType> &type) {
   assignedTypes[name] = type;
 }
